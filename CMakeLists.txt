@@ -17,6 +17,8 @@ FetchContent_MakeAvailable(SDL2)
 # 收集所有源文件
 file(GLOB_RECURSE SOURCES src/*.cpp)
 
+message(STATUS "Collected sources: ${SOURCES}")
+
 # 添加可执行文件
 add_executable(MiciusFCEmulator ${SOURCES})
 
