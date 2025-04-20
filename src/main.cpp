@@ -1,4 +1,6 @@
-#include <SDL2/SDL.h>
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_main.h>
+#include <SDL3/SDL_log.h>
 // #include "cpu/Cpu.h"
 // #include "ppu/Ppu.h"
 // #include "memory/Memory.h"
@@ -6,51 +8,47 @@
 // #include "input/InputHandler.h"
 // #include "utils/Logger.h"
 
-#include <SDL.h>
-
-int main(int argc, char* argv[]) {
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_EVENTS) != 0) {
+int main(int argc, char *argv[])
+{
+    SDL_SetLogPriorities(SDL_LOG_PRIORITY_VERBOSE);
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_EVENTS))
+    {
+        SDL_Log("SDL_Init failed: %s", SDL_GetError());
         return -1;
     }
 
-    // 创建 SDL 窗口（SDL3 中的 API 名称与 SDL2 相同）
-    SDL_Window* window = SDL_CreateWindow("Micius FC Emulator", 100, 100, 256 * 3, 240 * 3, SDL_WINDOW_SHOWN);
-    if (!window) {
+    SDL_Window *window = nullptr;
+    SDL_Renderer *renderer = nullptr;
+    if (!SDL_CreateWindowAndRenderer("Micius FC Emulator", 256 * 3, 240 * 3, SDL_WINDOW_RESIZABLE, &window, &renderer))
+    {
+        SDL_Log("Could not create window and renderer: %s", SDL_GetError());
         SDL_Quit();
         return -1;
     }
 
-    // 创建渲染器
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
-    if (!renderer) {
-        SDL_DestroyWindow(window);
-        SDL_Quit();
-        return -1;
-    }
-
-    // 主循环
     bool running = true;
     SDL_Event event;
-    while (running) {
-        while (SDL_PollEvent(&event)) {
-            if (event.type == SDL_QUIT) {
+    while (running)
+    {
+        while (SDL_PollEvent(&event))
+        {
+            if (event.type == SDL_EVENT_QUIT)
+            {
                 running = false;
             }
         }
 
-        // 渲染逻辑
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
         // TODO: 调用 PPU 绘制屏幕
         SDL_RenderPresent(renderer);
     }
 
-    // 清理资源
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
     return 0;
 }
-
 
 // int main()
 // {
