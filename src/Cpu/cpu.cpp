@@ -1,14 +1,12 @@
 #include "Cpu.h"
+#include "Instructions/AllInstructions.h"
+#include <memory>
 
 CPU::CPU(Memory& memory) : memory(memory), cycles(0), nmiPending(false), irqPending(false)
 {
     Reset();
     InitInstructionTable();
 }
-
-//CPU::~CPU()
-//{
-//}
 
 void CPU::Reset()
 {
@@ -30,26 +28,44 @@ void CPU::Reset()
 
 void CPU::InitInstructionTable()
 {
-    // Initialize all to NOP
+    // 初始化所有指令为NOP
     for (int i = 0; i < 256; i++) {
-        instructionTable[i] = &CPU::NOP;
+        instructionTable[i] = std::make_unique<NOP>();
     }
     
-    // Set up the actual instruction mapping
-    // This is just a placeholder - you'll need to implement the full instruction set
-    // Example entries:
+    // 加载指令
+    instructionTable[0xA9] = std::make_unique<LDA>(); // LDA Immediate
+    instructionTable[0xA5] = std::make_unique<LDA>(); // LDA Zero Page
+    instructionTable[0xB5] = std::make_unique<LDA>(); // LDA Zero Page,X
+    instructionTable[0xAD] = std::make_unique<LDA>(); // LDA Absolute
+    instructionTable[0xBD] = std::make_unique<LDA>(); // LDA Absolute,X
+    instructionTable[0xB9] = std::make_unique<LDA>(); // LDA Absolute,Y
+    instructionTable[0xA1] = std::make_unique<LDA>(); // LDA (Indirect,X)
+    instructionTable[0xB1] = std::make_unique<LDA>(); // LDA (Indirect),Y
     
-    // LDA
-    // instructionTable[0xA9] = &CPU::LDA_IMM;
-    // instructionTable[0xA5] = &CPU::LDA_ZP;
-    // ... and so on
+    // 增加X寄存器
+    instructionTable[0xE8] = std::make_unique<INX>(); // INX
     
-    // More instructions would be implemented here
+    // 加法指令
+    instructionTable[0x69] = std::make_unique<ADC>(); // ADC Immediate
+    instructionTable[0x65] = std::make_unique<ADC>(); // ADC Zero Page
+    instructionTable[0x75] = std::make_unique<ADC>(); // ADC Zero Page,X
+    instructionTable[0x6D] = std::make_unique<ADC>(); // ADC Absolute
+    instructionTable[0x7D] = std::make_unique<ADC>(); // ADC Absolute,X
+    instructionTable[0x79] = std::make_unique<ADC>(); // ADC Absolute,Y
+    instructionTable[0x61] = std::make_unique<ADC>(); // ADC (Indirect,X)
+    instructionTable[0x71] = std::make_unique<ADC>(); // ADC (Indirect),Y
+    
+    // 跳转指令
+    instructionTable[0x4C] = std::make_unique<JMP>(); // JMP Absolute
+    instructionTable[0x6C] = std::make_unique<JMP>(); // JMP Indirect
+    
+    // 随着更多指令类的实现，在这里添加更多的映射
 }
 
 uint8_t CPU::Step()
 {
-    // Handle interrupts
+    // 处理中断
     if (nmiPending) {
         HandleNMI();
         nmiPending = false;
@@ -62,14 +78,58 @@ uint8_t CPU::Step()
         return 7; // IRQ takes 7 cycles
     }
     
-    // Fetch opcode
+    // 获取操作码
     uint8_t opcode = FetchByte();
+    uint8_t cycleCount = 0;
     
-    // Execute instruction
-    InstructionFunc instruction = instructionTable[opcode];
-    (this->*instruction)();
+    // 根据寻址模式获取操作数地址
+    bool pageCrossed = false;
+    uint16_t addr = 0;
     
-    return 0; // Return cycles taken (to be implemented)
+    // 注意：这是一个简化版本，实际的地址解析应该基于指令的寻址模式
+    // 在完整实现中，应该有一个表将操作码映射到相应的寻址模式
+    switch (opcode) {
+        // LDA
+        case 0xA9: addr = AddrImmediate(); cycleCount = 2; break; // Immediate
+        case 0xA5: addr = AddrZeroPage(); cycleCount = 3; break;  // Zero Page
+        case 0xB5: addr = AddrZeroPageX(); cycleCount = 4; break; // Zero Page,X
+        case 0xAD: addr = AddrAbsolute(); cycleCount = 4; break;  // Absolute
+        case 0xBD: addr = AddrAbsoluteX(pageCrossed); cycleCount = 4 + (pageCrossed ? 1 : 0); break; // Absolute,X
+        case 0xB9: addr = AddrAbsoluteY(pageCrossed); cycleCount = 4 + (pageCrossed ? 1 : 0); break; // Absolute,Y
+        case 0xA1: addr = AddrIndirectX(); cycleCount = 6; break; // (Indirect,X)
+        case 0xB1: addr = AddrIndirectY(pageCrossed); cycleCount = 5 + (pageCrossed ? 1 : 0); break; // (Indirect),Y
+        
+        // ADC
+        case 0x69: addr = AddrImmediate(); cycleCount = 2; break; // Immediate
+        case 0x65: addr = AddrZeroPage(); cycleCount = 3; break;  // Zero Page
+        case 0x75: addr = AddrZeroPageX(); cycleCount = 4; break; // Zero Page,X
+        case 0x6D: addr = AddrAbsolute(); cycleCount = 4; break;  // Absolute
+        case 0x7D: addr = AddrAbsoluteX(pageCrossed); cycleCount = 4 + (pageCrossed ? 1 : 0); break; // Absolute,X
+        case 0x79: addr = AddrAbsoluteY(pageCrossed); cycleCount = 4 + (pageCrossed ? 1 : 0); break; // Absolute,Y
+        case 0x61: addr = AddrIndirectX(); cycleCount = 6; break; // (Indirect,X)
+        case 0x71: addr = AddrIndirectY(pageCrossed); cycleCount = 5 + (pageCrossed ? 1 : 0); break; // (Indirect),Y
+        
+        // JMP
+        case 0x4C: addr = AddrAbsolute(); cycleCount = 3; break; // Absolute
+        case 0x6C: addr = AddrIndirect(); cycleCount = 5; break; // Indirect
+        
+        // INX (无需操作数)
+        case 0xE8: cycleCount = 2; break; // Implied
+        
+        // 其他指令...
+        default: cycleCount = 2; break; // 默认NOP
+    }
+    
+    // 根据操作码执行指令
+    // 实际操作码解析和周期计算可能更复杂，这里做了简化
+    if (opcode == 0xE8) { // INX
+        instructionTable[opcode]->Execute(*this);
+    } else {
+        instructionTable[opcode]->Execute(*this, addr);
+    }
+    
+    cycles += cycleCount;
+    return cycleCount;
 }
 
 void CPU::TriggerNMI()
@@ -84,10 +144,10 @@ void CPU::TriggerIRQ()
 
 void CPU::DumpState() const
 {
-    // Implementation for debugging/testing
+    // 实现调试输出
 }
 
-// Addressing mode implementations
+// 地址模式实现
 uint16_t CPU::AddrImmediate()
 {
     return registers.PC++;
@@ -135,8 +195,7 @@ uint16_t CPU::AddrIndirect()
 {
     uint16_t ptr = FetchWord();
     
-    // Simulate 6502 page boundary bug
-    // If low byte is 0xFF, the high byte is fetched from the start of the page rather than from the next page
+    // 模拟6502页面边界bug
     if ((ptr & 0xFF) == 0xFF) {
         return (memory.Read(ptr & 0xFF00) << 8) | memory.Read(ptr);
     }
@@ -171,392 +230,14 @@ uint16_t CPU::AddrRelative()
     return registers.PC + offset;
 }
 
-// Instruction implementations
-void CPU::LDA(uint16_t addr)
-{
-    registers.A = ReadByte(addr);
-    SetZN(registers.A);
-}
-
-void CPU::LDX(uint16_t addr)
-{
-    registers.X = ReadByte(addr);
-    SetZN(registers.X);
-}
-
-void CPU::LDY(uint16_t addr)
-{
-    registers.Y = ReadByte(addr);
-    SetZN(registers.Y);
-}
-
-void CPU::STA(uint16_t addr)
-{
-    WriteByte(addr, registers.A);
-}
-
-void CPU::STX(uint16_t addr)
-{
-    WriteByte(addr, registers.X);
-}
-
-void CPU::STY(uint16_t addr)
-{
-    WriteByte(addr, registers.Y);
-}
-
-void CPU::ADC(uint16_t addr)
-{
-    uint8_t value = ReadByte(addr);
-    uint16_t result = registers.A + value + (registers.C ? 1 : 0);
-    
-    // Set carry flag
-    registers.C = result > 0xFF;
-    
-    // Set overflow flag
-    registers.V = ((registers.A ^ result) & (value ^ result) & 0x80) != 0;
-    
-    // Set the result
-    registers.A = result & 0xFF;
-    
-    // Set zero and negative flags
-    SetZN(registers.A);
-}
-
-void CPU::SBC(uint16_t addr)
-{
-    uint8_t value = ReadByte(addr);
-    uint16_t result = registers.A - value - (registers.C ? 0 : 1);
-    
-    // Set carry flag (inverted borrow)
-    registers.C = result < 0x100;
-    
-    // Set overflow flag
-    registers.V = ((registers.A ^ result) & (~value ^ result) & 0x80) != 0;
-    
-    // Set the result
-    registers.A = result & 0xFF;
-    
-    // Set zero and negative flags
-    SetZN(registers.A);
-}
-
-void CPU::AND(uint16_t addr)
-{
-    registers.A &= ReadByte(addr);
-    SetZN(registers.A);
-}
-
-void CPU::ORA(uint16_t addr)
-{
-    registers.A |= ReadByte(addr);
-    SetZN(registers.A);
-}
-
-void CPU::EOR(uint16_t addr)
-{
-    registers.A ^= ReadByte(addr);
-    SetZN(registers.A);
-}
-
-void CPU::INC(uint16_t addr)
-{
-    uint8_t value = ReadByte(addr) + 1;
-    WriteByte(addr, value);
-    SetZN(value);
-}
-
-void CPU::DEC(uint16_t addr)
-{
-    uint8_t value = ReadByte(addr) - 1;
-    WriteByte(addr, value);
-    SetZN(value);
-}
-
-void CPU::INX()
-{
-    registers.X++;
-    SetZN(registers.X);
-}
-
-void CPU::INY()
-{
-    registers.Y++;
-    SetZN(registers.Y);
-}
-
-void CPU::DEX()
-{
-    registers.X--;
-    SetZN(registers.X);
-}
-
-void CPU::DEY()
-{
-    registers.Y--;
-    SetZN(registers.Y);
-}
-
-void CPU::ASL(uint16_t addr)
-{
-    if (addr == registers.PC - 1) { // Accumulator addressing mode
-        registers.C = (registers.A & 0x80) != 0;
-        registers.A <<= 1;
-        SetZN(registers.A);
-    } else {
-        uint8_t value = ReadByte(addr);
-        registers.C = (value & 0x80) != 0;
-        value <<= 1;
-        WriteByte(addr, value);
-        SetZN(value);
-    }
-}
-
-void CPU::LSR(uint16_t addr)
-{
-    if (addr == registers.PC - 1) { // Accumulator addressing mode
-        registers.C = (registers.A & 0x01) != 0;
-        registers.A >>= 1;
-        SetZN(registers.A);
-    } else {
-        uint8_t value = ReadByte(addr);
-        registers.C = (value & 0x01) != 0;
-        value >>= 1;
-        WriteByte(addr, value);
-        SetZN(value);
-    }
-}
-
-void CPU::ROL(uint16_t addr)
-{
-    if (addr == registers.PC - 1) { // Accumulator addressing mode
-        uint8_t carry = registers.C ? 1 : 0;
-        registers.C = (registers.A & 0x80) != 0;
-        registers.A = (registers.A << 1) | carry;
-        SetZN(registers.A);
-    } else {
-        uint8_t value = ReadByte(addr);
-        uint8_t carry = registers.C ? 1 : 0;
-        registers.C = (value & 0x80) != 0;
-        value = (value << 1) | carry;
-        WriteByte(addr, value);
-        SetZN(value);
-    }
-}
-
-void CPU::ROR(uint16_t addr)
-{
-    if (addr == registers.PC - 1) { // Accumulator addressing mode
-        uint8_t carry = registers.C ? 0x80 : 0;
-        registers.C = (registers.A & 0x01) != 0;
-        registers.A = (registers.A >> 1) | carry;
-        SetZN(registers.A);
-    } else {
-        uint8_t value = ReadByte(addr);
-        uint8_t carry = registers.C ? 0x80 : 0;
-        registers.C = (value & 0x01) != 0;
-        value = (value >> 1) | carry;
-        WriteByte(addr, value);
-        SetZN(value);
-    }
-}
-
-void CPU::JMP(uint16_t addr)
-{
-    registers.PC = addr;
-}
-
-void CPU::JSR(uint16_t addr)
-{
-    registers.PC--; // Adjust PC for correct return address
-    Push((registers.PC >> 8) & 0xFF); // Push high byte
-    Push(registers.PC & 0xFF);        // Push low byte
-    registers.PC = addr;
-}
-
-void CPU::RTS()
-{
-    uint8_t lowByte = Pop();
-    uint8_t highByte = Pop();
-    registers.PC = ((highByte << 8) | lowByte) + 1;
-}
-
-void CPU::RTI()
-{
-    registers.P = Pop();
-    registers.B = 0; // B flag is not physical
-    uint8_t lowByte = Pop();
-    uint8_t highByte = Pop();
-    registers.PC = (highByte << 8) | lowByte;
-}
-
-void CPU::BCS(uint16_t addr)
-{
-    if (registers.C) {
-        registers.PC = addr;
-    }
-}
-
-void CPU::BCC(uint16_t addr)
-{
-    if (!registers.C) {
-        registers.PC = addr;
-    }
-}
-
-void CPU::BEQ(uint16_t addr)
-{
-    if (registers.Z) {
-        registers.PC = addr;
-    }
-}
-
-void CPU::BNE(uint16_t addr)
-{
-    if (!registers.Z) {
-        registers.PC = addr;
-    }
-}
-
-void CPU::BVS(uint16_t addr)
-{
-    if (registers.V) {
-        registers.PC = addr;
-    }
-}
-
-void CPU::BVC(uint16_t addr)
-{
-    if (!registers.V) {
-        registers.PC = addr;
-    }
-}
-
-void CPU::BMI(uint16_t addr)
-{
-    if (registers.N) {
-        registers.PC = addr;
-    }
-}
-
-void CPU::BPL(uint16_t addr)
-{
-    if (!registers.N) {
-        registers.PC = addr;
-    }
-}
-
-void CPU::CMP(uint16_t addr)
-{
-    uint8_t value = ReadByte(addr);
-    uint8_t result = registers.A - value;
-    
-    registers.C = registers.A >= value;
-    SetZN(result);
-}
-
-void CPU::CPX(uint16_t addr)
-{
-    uint8_t value = ReadByte(addr);
-    uint8_t result = registers.X - value;
-    
-    registers.C = registers.X >= value;
-    SetZN(result);
-}
-
-void CPU::CPY(uint16_t addr)
-{
-    uint8_t value = ReadByte(addr);
-    uint8_t result = registers.Y - value;
-    
-    registers.C = registers.Y >= value;
-    SetZN(result);
-}
-
-void CPU::BIT(uint16_t addr)
-{
-    uint8_t value = ReadByte(addr);
-    
-    registers.Z = (registers.A & value) == 0;
-    registers.V = (value & 0x40) != 0;
-    registers.N = (value & 0x80) != 0;
-}
-
-void CPU::CLC()
-{
-    registers.C = 0;
-}
-
-void CPU::SEC()
-{
-    registers.C = 1;
-}
-
-void CPU::CLI()
-{
-    registers.I = 0;
-}
-
-void CPU::SEI()
-{
-    registers.I = 1;
-}
-
-void CPU::CLV()
-{
-    registers.V = 0;
-}
-
-void CPU::CLD()
-{
-    registers.D = 0;
-}
-
-void CPU::SED()
-{
-    registers.D = 1;
-}
-
-void CPU::NOP()
-{
-    // No operation
-}
-
-void CPU::BRK()
-{
-    registers.PC++;
-    HandleBRK();
-}
-
-void CPU::PHP()
-{
-    uint8_t status = registers.P | 0x10; // Set B flag when pushing
-    Push(status);
-}
-
-void CPU::PLP()
-{
-    registers.P = Pop() & ~0x10; // B flag is not physical
-}
-
-void CPU::PHA()
-{
-    Push(registers.A);
-}
-
-void CPU::PLA()
-{
-    registers.A = Pop();
-    SetZN(registers.A);
-}
-
+// 中断处理
 void CPU::HandleNMI()
 {
     Push((registers.PC >> 8) & 0xFF);
     Push(registers.PC & 0xFF);
     
     registers.B = 0;
-    uint8_t status = registers.P & ~0x10; // Clear B flag
+    uint8_t status = registers.P & ~0x10; // 清除B标志
     Push(status);
     
     registers.I = 1;
@@ -574,7 +255,7 @@ void CPU::HandleIRQ()
     Push(registers.PC & 0xFF);
     
     registers.B = 0;
-    uint8_t status = registers.P & ~0x10; // Clear B flag
+    uint8_t status = registers.P & ~0x10; // 清除B标志
     Push(status);
     
     registers.I = 1;
@@ -592,7 +273,7 @@ void CPU::HandleBRK()
     Push(registers.PC & 0xFF);
     
     registers.B = 1;
-    Push(registers.P | 0x10); // Set B flag
+    Push(registers.P | 0x10); // 设置B标志
     registers.I = 1;
     
     uint16_t lowByte = memory.Read(0xFFFE);
@@ -602,6 +283,7 @@ void CPU::HandleBRK()
     cycles += 7;
 }
 
+// 实用工具函数
 void CPU::SetZN(uint8_t value)
 {
     registers.Z = (value == 0);
@@ -641,4 +323,4 @@ uint8_t CPU::ReadByte(uint16_t addr)
 void CPU::WriteByte(uint16_t addr, uint8_t value)
 {
     memory.Write(addr, value);
-}
+} 

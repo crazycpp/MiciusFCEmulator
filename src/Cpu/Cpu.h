@@ -1,9 +1,10 @@
 #pragma once
 #include <cstdint>
 #include <array>
-#include <functional>
+#include <memory>
+#include "Instructions/Instruction.h"
 
-class Memory; // 前向声明，稍后会与CPU交互
+class Memory;
 
 class CPU {
 public:
@@ -22,6 +23,54 @@ public:
     
     // 用于调试/测试
     void DumpState() const;
+    
+    // 指令和地址模式需要访问的接口
+    uint8_t GetA() const { return registers.A; }
+    void SetA(uint8_t value) { registers.A = value; }
+    uint8_t GetX() const { return registers.X; }
+    void SetX(uint8_t value) { registers.X = value; }
+    uint8_t GetY() const { return registers.Y; }
+    void SetY(uint8_t value) { registers.Y = value; }
+    uint16_t GetPC() const { return registers.PC; }
+    void SetPC(uint16_t value) { registers.PC = value; }
+    uint8_t GetSP() const { return registers.SP; }
+    void SetSP(uint8_t value) { registers.SP = value; }
+    uint8_t GetP() const { return registers.P; }
+    void SetP(uint8_t value) { registers.P = value; }
+    
+    // 状态标志位访问
+    bool GetCarryFlag() const { return registers.C; }
+    void SetCarryFlag(bool value) { registers.C = value; }
+    bool GetZeroFlag() const { return registers.Z; }
+    void SetZeroFlag(bool value) { registers.Z = value; }
+    bool GetInterruptDisableFlag() const { return registers.I; }
+    void SetInterruptDisableFlag(bool value) { registers.I = value; }
+    bool GetDecimalModeFlag() const { return registers.D; }
+    void SetDecimalModeFlag(bool value) { registers.D = value; }
+    bool GetBreakCommandFlag() const { return registers.B; }
+    void SetBreakCommandFlag(bool value) { registers.B = value; }
+    bool GetOverflowFlag() const { return registers.V; }
+    void SetOverflowFlag(bool value) { registers.V = value; }
+    bool GetNegativeFlag() const { return registers.N; }
+    void SetNegativeFlag(bool value) { registers.N = value; }
+    
+    // 设置零标志和负标志
+    void SetZN(uint8_t value);
+    
+    // 内存访问
+    uint8_t ReadByte(uint16_t addr);
+    void WriteByte(uint16_t addr, uint8_t value);
+    uint8_t FetchByte();
+    uint16_t FetchWord();
+    
+    // 栈操作
+    void Push(uint8_t value);
+    uint8_t Pop();
+    
+    // 中断处理
+    void HandleNMI();
+    void HandleIRQ();
+    void HandleBRK();
     
 private:
     // 寄存器
@@ -71,89 +120,13 @@ private:
     uint16_t AddrIndirectY(bool& pageCrossed);
     uint16_t AddrRelative();
     
-    // 指令实现
-    void LDA(uint16_t addr); // 加载到累加器
-    void LDX(uint16_t addr); // 加载到X寄存器
-    void LDY(uint16_t addr); // 加载到Y寄存器
-    void STA(uint16_t addr); // 存储累加器
-    void STX(uint16_t addr); // 存储X寄存器
-    void STY(uint16_t addr); // 存储Y寄存器
-    
-    void ADC(uint16_t addr); // 带进位加法
-    void SBC(uint16_t addr); // 带借位减法
-    void AND(uint16_t addr); // 与运算
-    void ORA(uint16_t addr); // 或运算
-    void EOR(uint16_t addr); // 异或运算
-    
-    void INC(uint16_t addr); // 内存值加1
-    void DEC(uint16_t addr); // 内存值减1
-    void INX();              // X寄存器加1
-    void INY();              // Y寄存器加1
-    void DEX();              // X寄存器减1
-    void DEY();              // Y寄存器减1
-    
-    void ASL(uint16_t addr); // 算术左移
-    void LSR(uint16_t addr); // 逻辑右移
-    void ROL(uint16_t addr); // 带进位左移
-    void ROR(uint16_t addr); // 带进位右移
-    
-    void JMP(uint16_t addr); // 无条件跳转
-    void JSR(uint16_t addr); // 调用子程序
-    void RTS();              // 从子程序返回
-    void RTI();              // 从中断返回
-    
-    void BCS(uint16_t addr); // 进位标志置位时分支
-    void BCC(uint16_t addr); // 进位标志清零时分支
-    void BEQ(uint16_t addr); // 零标志置位时分支
-    void BNE(uint16_t addr); // 零标志清零时分支
-    void BVS(uint16_t addr); // 溢出标志置位时分支
-    void BVC(uint16_t addr); // 溢出标志清零时分支
-    void BMI(uint16_t addr); // 负标志置位时分支
-    void BPL(uint16_t addr); // 负标志清零时分支
-    
-    void CMP(uint16_t addr); // 比较累加器
-    void CPX(uint16_t addr); // 比较X寄存器
-    void CPY(uint16_t addr); // 比较Y寄存器
-    
-    void BIT(uint16_t addr); // 位测试
-    
-    void CLC();              // 清除进位标志
-    void SEC();              // 设置进位标志
-    void CLI();              // 清除中断禁止
-    void SEI();              // 设置中断禁止
-    void CLV();              // 清除溢出标志
-    void CLD();              // 清除十进制模式
-    void SED();              // 设置十进制模式
-    
-    void NOP();              // 无操作
-    void BRK();              // 强制中断
-    void PHP();              // 将状态压栈
-    void PLP();              // 从栈弹出状态
-    void PHA();              // 将累加器压栈
-    void PLA();              // 从栈弹出到累加器
-    
-    void HandleNMI();        // 处理NMI中断
-    void HandleIRQ();        // 处理IRQ中断
-    void HandleBRK();        // 处理BRK指令
-    
-    // 工具函数
-    void SetZN(uint8_t value); // 设置零标志和负标志
-    void Push(uint8_t value);  // 值入栈
-    uint8_t Pop();            // 从栈弹出值
-    
-    // 读取下一个字节(PC++)
-    uint8_t FetchByte();
-    // 读取下一个字(PC+=2)
-    uint16_t FetchWord();
-    // 根据地址读取内存
-    uint8_t ReadByte(uint16_t addr);
-    // 写入内存
-    void WriteByte(uint16_t addr, uint8_t value);
-    
-    // 指令映射表，使用函数指针加速指令分派
-    using InstructionFunc = void (CPU::*)();
-    std::array<InstructionFunc, 256> instructionTable;
+    // 指令分派表
+    std::array<std::unique_ptr<Instruction>, 256> instructionTable;
     void InitInstructionTable();
+    
+    // 原先的函数指针分派表（可选保留，以便过渡）
+    // using InstructionFunc = void (CPU::*)();
+    // std::array<InstructionFunc, 256> instructionTable;
 };
 
 class Memory {
@@ -163,4 +136,4 @@ public:
     // 读写接口
     virtual uint8_t Read(uint16_t addr) = 0;
     virtual void Write(uint16_t addr, uint8_t data) = 0;
-};
+}; 
