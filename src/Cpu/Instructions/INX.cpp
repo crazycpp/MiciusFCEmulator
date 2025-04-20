@@ -1,5 +1,5 @@
 #include "INX.h"
-#include "../CpuInterface.h"
+#include "../Cpu.h"
 
 void INX::Execute(CPU& cpu) {
     uint8_t value = cpu.GetX() + 1;

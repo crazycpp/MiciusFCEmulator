@@ -5,5 +5,5 @@
 class ADC : public Instruction
 {
 public:
-    void Execute(CPU &cpu, uint16_t addr) override;
+    void  Execute(CPU& cpu, uint16_t addr)  override;
 };
