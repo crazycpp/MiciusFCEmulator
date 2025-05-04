@@ -17,7 +17,7 @@ public:
     bool PageBoundaryCrossed() const override { return pageCrossed; }
     
     // 返回此模式的类型ID
-    AddressModeType GetType() const override { return IndirectY; }
+    AddressModeType GetType() const override { return AddressModeType::IndirectY; }
     
 private:
     bool pageCrossed; // 跨页标志

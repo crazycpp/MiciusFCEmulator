@@ -11,5 +11,5 @@ public:
     uint8_t Cycles() const override { return 3; }
     
     // 返回此模式的类型ID
-    AddressModeType GetType() const override { return ZeroPage; }
+    AddressModeType GetType() const override { return AddressModeType::ZeroPage; }
 }; 

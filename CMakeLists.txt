@@ -37,8 +37,8 @@ target_compile_definitions(MiciusFCEmulator PRIVATE
 # 区分 Debug 和 Release 编译选项（可选）
 if(MSVC)
     target_compile_options(MiciusFCEmulator PRIVATE 
-        $<$<CONFIG:Debug>:/W4 /Zi>
-        $<$<CONFIG:Release>:/O2>
+        $<$<CONFIG:Debug>:/W4 /Zi /utf-8 /wd4201>
+        $<$<CONFIG:Release>:/O2 /utf-8 /wd4201>
     )
 else()
     target_compile_options(MiciusFCEmulator PRIVATE 
