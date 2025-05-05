@@ -1,7 +1,7 @@
 #include "ADC.h"
 #include "../Cpu.h"
 
-void ADC::Execute(CPU& cpu, uint16_t addr)
+void ADC::ExecuteWithAddress(CPU& cpu, uint16_t addr)
 {
     uint8_t value = cpu.ReadByte(addr);
     uint8_t a = cpu.GetA();

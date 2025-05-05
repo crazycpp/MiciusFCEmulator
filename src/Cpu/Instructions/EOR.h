@@ -1,8 +1,19 @@
 #pragma once
-#include "Instruction.h"
+#include "AddressedInstruction.h"
 
 // EOR - 异或指令
-class EOR : public Instruction {
+class EOR : public AddressedInstruction {
 public:
-    void Execute(CPU& cpu, uint16_t addr) override;
+    // 使用基类的构造函数
+    using AddressedInstruction::AddressedInstruction;
+    
+    // 基本周期数
+    uint8_t Cycles() const override { return 2; }
+    
+    // 某些寻址模式可能额外+1周期
+    bool MayAddCycle() const override { return true; }
+    
+protected:
+    // 实现具体的指令逻辑
+    void ExecuteWithAddress(CPU& cpu, uint16_t addr) override;
 }; 

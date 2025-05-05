@@ -1,6 +1,12 @@
 #pragma once
 
-// 包含所有指令头文件
+// Base Classes
+#include "Instruction.h"
+#include "ImpliedInstruction.h"
+#include "AddressedInstruction.h"
+#include "AccumulatorInstruction.h"
+
+// Specific Instructions
 #include "ADC.h"
 #include "AND.h"
 #include "ASL.h"

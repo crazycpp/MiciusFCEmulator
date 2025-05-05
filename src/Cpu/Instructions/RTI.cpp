@@ -1,7 +1,7 @@
 #include "RTI.h"
 #include "../Cpu.h"
 
-void RTI::Execute(CPU& cpu) {
+void RTI::ExecuteImpl(CPU& cpu) {
     // 从堆栈恢复处理器状态
     uint8_t status = cpu.Pop();
     

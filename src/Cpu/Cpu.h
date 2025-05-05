@@ -109,11 +109,11 @@ private:
     bool nmiPending;
     bool irqPending;
     
-    // 指令分派表
+    // 指令表 - 改为直接注入寻址模式的设计
     std::array<std::unique_ptr<Instruction>, 256> instructionTable;
     
-    // 寻址模式映射表
-    std::unordered_map<uint8_t, std::unique_ptr<AddressingMode>> addressingModes;
+    // 寻址模式池 - 用于共享寻址模式实例
+    std::unordered_map<int, std::unique_ptr<AddressingMode>> addressingModes;
     
     // 初始化函数
     void InitInstructionTable();

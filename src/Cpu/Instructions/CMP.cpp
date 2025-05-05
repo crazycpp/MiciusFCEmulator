@@ -1,7 +1,7 @@
 #include "CMP.h"
 #include "../Cpu.h"
 
-void CMP::Execute(CPU& cpu, uint16_t addr) {
+void CMP::ExecuteWithAddress(CPU& cpu, uint16_t addr) {
     uint8_t value = cpu.ReadByte(addr);
     uint8_t a = cpu.GetA();
     uint8_t result = a - value;

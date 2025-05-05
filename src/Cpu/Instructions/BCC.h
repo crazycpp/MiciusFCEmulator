@@ -1,8 +1,19 @@
 #pragma once
-#include "Instruction.h"
+#include "AddressedInstruction.h"
 
 // BCC - 进位标志为0时分支
-class BCC : public Instruction {
+class BCC : public AddressedInstruction {
 public:
-    void Execute(CPU& cpu, uint16_t addr) override;
+    // 使用基类的构造函数
+    using AddressedInstruction::AddressedInstruction;
+    
+    // 基本周期数
+    uint8_t Cycles() const override { return 2; }
+    
+    // 分支执行可能额外+1或+2周期
+    bool MayAddCycle() const override { return true; }
+    
+protected:
+    // 实现具体的指令逻辑
+    void ExecuteWithAddress(CPU& cpu, uint16_t addr) override;
 }; 

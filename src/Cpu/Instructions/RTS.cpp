@@ -1,7 +1,7 @@
 #include "RTS.h"
 #include "../Cpu.h"
 
-void RTS::Execute(CPU& cpu) {
+void RTS::ExecuteImpl(CPU& cpu) {
     // 从堆栈中取出返回地址
     uint8_t pcl = cpu.Pop();
     uint8_t pch = cpu.Pop();

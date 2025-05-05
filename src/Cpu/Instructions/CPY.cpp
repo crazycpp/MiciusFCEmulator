@@ -1,7 +1,7 @@
 #include "CPY.h"
 #include "../Cpu.h"
 
-void CPY::Execute(CPU& cpu, uint16_t addr) {
+void CPY::ExecuteWithAddress(CPU& cpu, uint16_t addr) {
     uint8_t value = cpu.ReadByte(addr);
     uint8_t y = cpu.GetY();
     uint8_t result = y - value;

@@ -1,7 +1,7 @@
 #include "BIT.h"
 #include "../Cpu.h"
 
-void BIT::Execute(CPU& cpu, uint16_t addr) {
+void BIT::ExecuteWithAddress(CPU& cpu, uint16_t addr) {
     uint8_t value = cpu.ReadByte(addr);
     uint8_t result = cpu.GetA() & value;
     

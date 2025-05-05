@@ -1,6 +1,6 @@
 #include "SEI.h"
 #include "../Cpu.h"
 
-void SEI::Execute(CPU& cpu) {
+void SEI::ExecuteImpl(CPU& cpu) {
     cpu.SetInterruptDisableFlag(true);
 } 

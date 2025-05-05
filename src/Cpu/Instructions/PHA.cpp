@@ -1,6 +1,6 @@
 #include "PHA.h"
 #include "../Cpu.h"
 
-void PHA::Execute(CPU& cpu) {
+void PHA::ExecuteImpl(CPU& cpu) {
     cpu.Push(cpu.GetA());
 } 

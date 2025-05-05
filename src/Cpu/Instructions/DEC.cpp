@@ -1,7 +1,7 @@
 #include "DEC.h"
 #include "../Cpu.h"
 
-void DEC::Execute(CPU& cpu, uint16_t addr) {
+void DEC::ExecuteWithAddress(CPU& cpu, uint16_t addr) {
     uint8_t value = cpu.ReadByte(addr);
     uint8_t result = value - 1;
     

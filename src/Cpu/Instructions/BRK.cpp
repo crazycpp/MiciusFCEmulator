@@ -1,7 +1,7 @@
 #include "BRK.h"
 #include "../Cpu.h"
 
-void BRK::Execute(CPU& cpu) {
+void BRK::ExecuteImpl(CPU& cpu) {
     // 程序计数器已增加，将PC+1压入堆栈
     cpu.Push((cpu.GetPC() >> 8) & 0xFF); // 高位
     cpu.Push(cpu.GetPC() & 0xFF);        // 低位

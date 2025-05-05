@@ -1,7 +1,7 @@
 #include "SBC.h"
 #include "../Cpu.h"
 
-void SBC::Execute(CPU& cpu, uint16_t addr) {
+void SBC::ExecuteWithAddress(CPU& cpu, uint16_t addr) {
     uint8_t value = cpu.ReadByte(addr);
     uint8_t a = cpu.GetA();
     uint8_t carry = cpu.GetCarryFlag() ? 1 : 0;

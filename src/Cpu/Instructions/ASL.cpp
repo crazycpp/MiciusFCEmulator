@@ -1,28 +1,35 @@
 #include "ASL.h"
 #include "../Cpu.h"
 
-void ASL::Execute(CPU& cpu, uint16_t addr) {
-    // 内存寻址模式
-    uint8_t value = cpu.ReadByte(addr);
-    uint8_t result = value << 1;
+void ASL::ExecuteOnAccumulator(CPU& cpu) {
+    uint8_t value = cpu.GetA();
     
-    // 设置进位标志为原值的最高位
+    // 设置进位标志为第7位的值
     cpu.SetCarryFlag((value & 0x80) != 0);
     
-    // 更新内存值并设置标志位
-    cpu.WriteByte(addr, result);
-    cpu.SetZN(result);
+    // 左移一位
+    value <<= 1;
+    
+    // 设置零标志和负标志
+    cpu.SetZN(value);
+    
+    // 写回累加器
+    cpu.SetA(value);
 }
 
-void ASL::Execute(CPU& cpu) {
-    // 累加器寻址模式
-    uint8_t value = cpu.GetA();
-    uint8_t result = value << 1;
+void ASL::ExecuteOnMemory(CPU& cpu, uint16_t address) {
+    // 读取内存值
+    uint8_t value = cpu.ReadByte(address);
     
-    // 设置进位标志为原值的最高位
+    // 设置进位标志为第7位的值
     cpu.SetCarryFlag((value & 0x80) != 0);
     
-    // 更新累加器值并设置标志位
-    cpu.SetA(result);
-    cpu.SetZN(result);
+    // 左移一位
+    value <<= 1;
+    
+    // 设置零标志和负标志
+    cpu.SetZN(value);
+    
+    // 写回内存
+    cpu.WriteByte(address, value);
 } 
