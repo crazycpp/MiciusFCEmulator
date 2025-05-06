@@ -67,13 +67,10 @@ bool Cartridge::CheckRomHeader(const std::vector<uint8_t>& romData)
         return false;
     }
 
-
-
-
     return true;
 }
 
-void Cartridge::LoadRomData(span<const uint8_t> romData)
+void Cartridge::LoadRomData(const std::vector<uint8_t>& romData)
 {
     m_PrgMemory.resize(m_PrgRomSize * 16 * 1024);
     m_ChrMemory.resize(m_ChrRomSize * 8 * 1024);

@@ -1,3 +1,5 @@
+#pragma once
+
 #include <filesystem>
 #include <vector>
 #include <string>
@@ -14,12 +16,20 @@ public:
 
     bool Load();
 
-    span<const uint8_t> GetPrgMemory()const { return m_PrgMemory; }
-    span<const uint8_t> GetChrMemory()const{ return m_ChrMemory; }
+    // 提供std::span访问内存
+    std::span<const uint8_t> GetPrgRom() const { return std::span<const uint8_t>(m_PrgMemory.data(), m_PrgMemory.size()); }
+    std::span<const uint8_t> GetChrRom() const { return std::span<const uint8_t>(m_ChrMemory.data(), m_ChrMemory.size()); }
+    
+    // 同时保留原始访问方式以保证兼容性
+    const uint8_t* GetPrgMemory() const { return m_PrgMemory.data(); }
+    size_t GetPrgMemorySize() const { return m_PrgMemory.size(); }
+    
+    const uint8_t* GetChrMemory() const { return m_ChrMemory.data(); }
+    size_t GetChrMemorySize() const { return m_ChrMemory.size(); }
 
 private:
     bool CheckRomHeader(const std::vector<uint8_t>& romData);
-    void LoadRomData(span<const uint8_t> romData);
+    void LoadRomData(const std::vector<uint8_t>& romData);
 
 private:
     
