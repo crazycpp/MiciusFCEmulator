@@ -202,6 +202,14 @@ void CPU::InitInstructionTable()
     // NOP - No Operation (官方)
     instructionTable[0xEA] = std::make_unique<NOP>(addressingModes[AddressingMode::Implied].get());
 
+    // NOP - No Operation (非官方隐含寻址变体)
+    instructionTable[0x1A] = std::make_unique<NOP>(addressingModes[AddressingMode::Implied].get());
+    instructionTable[0x3A] = std::make_unique<NOP>(addressingModes[AddressingMode::Implied].get());
+    instructionTable[0x5A] = std::make_unique<NOP>(addressingModes[AddressingMode::Implied].get());
+    instructionTable[0x7A] = std::make_unique<NOP>(addressingModes[AddressingMode::Implied].get());
+    instructionTable[0xDA] = std::make_unique<NOP>(addressingModes[AddressingMode::Implied].get());
+    instructionTable[0xFA] = std::make_unique<NOP>(addressingModes[AddressingMode::Implied].get());
+
     // ORA - Logical Inclusive OR
     instructionTable[0x09] = std::make_unique<ORA>(addressingModes[AddressingMode::Immediate].get());
     instructionTable[0x05] = std::make_unique<ORA>(addressingModes[AddressingMode::ZeroPage].get());
@@ -316,6 +324,17 @@ void CPU::InitInstructionTable()
     instructionTable[0xE2] = std::make_unique<DOP>(addressingModes[AddressingMode::Immediate].get());
     instructionTable[0xF4] = std::make_unique<DOP>(addressingModes[AddressingMode::ZeroPageX].get());
 
+    // TOP - Triple NOP (非官方NOP变体，使用绝对寻址但不做任何事)
+    instructionTable[0x0C] = std::make_unique<TOP>(addressingModes[AddressingMode::Absolute].get());
+    
+    // TOP - Triple NOP with AbsoluteX addressing (非官方NOP变体，使用绝对X变址寻址)
+    instructionTable[0x1C] = std::make_unique<TOP>(addressingModes[AddressingMode::AbsoluteX].get());
+    instructionTable[0x3C] = std::make_unique<TOP>(addressingModes[AddressingMode::AbsoluteX].get());
+    instructionTable[0x5C] = std::make_unique<TOP>(addressingModes[AddressingMode::AbsoluteX].get());
+    instructionTable[0x7C] = std::make_unique<TOP>(addressingModes[AddressingMode::AbsoluteX].get());
+    instructionTable[0xDC] = std::make_unique<TOP>(addressingModes[AddressingMode::AbsoluteX].get());
+    instructionTable[0xFC] = std::make_unique<TOP>(addressingModes[AddressingMode::AbsoluteX].get());
+    
     // 非官方指令
     
     // SLO - Shift Left then OR (ASL + ORA)
@@ -486,7 +505,8 @@ int CPU::GetInstructionLength(uint8_t opcode) const
         0xAA, 0xA8, 0xBA, 0x8A, 0x9A, 0x98,       // TAX, TAY, TSX, TXA, TXS, TYA
         0x48, 0x08, 0x68, 0x28,                   // PHA, PHP, PLA, PLP
         0x40, 0x60, 0x00,                         // RTI, RTS, BRK
-        0xE8, 0xC8, 0xCA, 0x88                    // INX, INY, DEX, DEY
+        0xE8, 0xC8, 0xCA, 0x88,                   // INX, INY, DEX, DEY
+        0x1A, 0x3A, 0x5A, 0x7A, 0xDA, 0xFA        // 非官方NOP变体 (隐含寻址)
     };
 
     // 2字节指令
@@ -496,7 +516,9 @@ int CPU::GetInstructionLength(uint8_t opcode) const
         0x06, 0x26, 0x46, 0x66, 0xC6, 0xE6,                                     // 零页操作
         0x14, 0x15, 0x34, 0x35, 0x55, 0x75, 0x94, 0x95, 0xB4, 0xB5, 0xD5, 0xF5, // 零页，X
         0x96, 0xB6,                                                             // 零页，Y
-        0x90, 0xB0, 0xF0, 0x30, 0xD0, 0x10, 0x50, 0x70                          // 分支指令
+        0x90, 0xB0, 0xF0, 0x30, 0xD0, 0x10, 0x50, 0x70,                         // 分支指令
+        0x04, 0x44, 0x54, 0x64, 0x74, 0xD4, 0xF4,                               // 非官方DOP (ZeroPage/ZeroPageX)
+        0x80, 0x82, 0x89, 0xC2, 0xE2                                           // 非官方DOP (Immediate)
     };
 
     // 检查是1字节指令
@@ -525,21 +547,21 @@ std::string CPU::DisassembleInstruction(uint8_t opcode, uint8_t param1, uint8_t 
     // 指令助记符表
     static const char *mnemonics[] = {
         "BRK", "ORA", "???", "SLO", "NOP", "ORA", "ASL", "SLO", // 0x00-0x07
-        "PHP", "ORA", "ASL", "???", "???", "ORA", "ASL", "SLO", // 0x08-0x0F
-        "BPL", "ORA", "???", "SLO", "NOP", "ORA", "ASL", "SLO", // 0x10-0x17
-        "CLC", "ORA", "???", "SLO", "???", "ORA", "ASL", "SLO", // 0x18-0x1F
+        "PHP", "ORA", "ASL", "???", "NOP", "ORA", "ASL", "SLO", // 0x08-0x0F
+        "BPL", "ORA", "NOP", "SLO", "NOP", "ORA", "ASL", "SLO", // 0x10-0x17
+        "CLC", "ORA", "NOP", "SLO", "NOP", "ORA", "ASL", "SLO", // 0x18-0x1F
         "JSR", "AND", "???", "RLA", "BIT", "AND", "ROL", "RLA", // 0x20-0x27
         "PLP", "AND", "ROL", "???", "BIT", "AND", "ROL", "RLA", // 0x28-0x2F
         "BMI", "AND", "???", "RLA", "NOP", "AND", "ROL", "RLA", // 0x30-0x37
-        "SEC", "AND", "???", "RLA", "???", "AND", "ROL", "RLA", // 0x38-0x3F
+        "SEC", "AND", "NOP", "RLA", "NOP", "AND", "ROL", "RLA", // 0x38-0x3F
         "RTI", "EOR", "???", "SRE", "NOP", "EOR", "LSR", "SRE", // 0x40-0x47
         "PHA", "EOR", "LSR", "???", "JMP", "EOR", "LSR", "SRE", // 0x48-0x4F
         "BVC", "EOR", "???", "SRE", "NOP", "EOR", "LSR", "SRE", // 0x50-0x57
-        "CLI", "EOR", "???", "SRE", "???", "EOR", "LSR", "SRE", // 0x58-0x5F
+        "CLI", "EOR", "NOP", "SRE", "NOP", "EOR", "LSR", "SRE", // 0x58-0x5F
         "RTS", "ADC", "???", "RRA", "NOP", "ADC", "ROR", "RRA", // 0x60-0x67
         "PLA", "ADC", "ROR", "???", "JMP", "ADC", "ROR", "RRA", // 0x68-0x6F
         "BVS", "ADC", "???", "RRA", "NOP", "ADC", "ROR", "RRA", // 0x70-0x77
-        "SEI", "ADC", "???", "RRA", "???", "ADC", "ROR", "RRA", // 0x78-0x7F
+        "SEI", "ADC", "NOP", "RRA", "NOP", "ADC", "ROR", "RRA", // 0x78-0x7F
         "NOP", "STA", "NOP", "SAX", "STY", "STA", "STX", "SAX", // 0x80-0x87
         "DEY", "NOP", "TXA", "???", "STY", "STA", "STX", "SAX", // 0x88-0x8F
         "BCC", "STA", "???", "???", "STY", "STA", "STX", "SAX", // 0x90-0x97
@@ -551,11 +573,11 @@ std::string CPU::DisassembleInstruction(uint8_t opcode, uint8_t param1, uint8_t 
         "CPY", "CMP", "NOP", "DCP", "CPY", "CMP", "DEC", "DCP", // 0xC0-0xC7
         "INY", "CMP", "DEX", "???", "CPY", "CMP", "DEC", "DCP", // 0xC8-0xCF
         "BNE", "CMP", "???", "DCP", "NOP", "CMP", "DEC", "DCP", // 0xD0-0xD7
-        "CLD", "CMP", "???", "DCP", "???", "CMP", "DEC", "DCP", // 0xD8-0xDF
+        "CLD", "CMP", "NOP", "DCP", "NOP", "CMP", "DEC", "DCP", // 0xD8-0xDF
         "CPX", "SBC", "NOP", "ISB", "CPX", "SBC", "INC", "ISB", // 0xE0-0xE7
         "INX", "SBC", "NOP", "SBC", "CPX", "SBC", "INC", "ISB", // 0xE8-0xEF
         "BEQ", "SBC", "???", "ISB", "NOP", "SBC", "INC", "ISB", // 0xF0-0xF7
-        "SED", "SBC", "???", "ISB", "???", "SBC", "INC", "ISB"  // 0xF8-0xFF
+        "SED", "SBC", "NOP", "ISB", "NOP", "SBC", "INC", "ISB"  // 0xF8-0xFF
     };
 
     // 获取指令助记符
@@ -584,8 +606,14 @@ std::string CPU::DisassembleInstruction(uint8_t opcode, uint8_t param1, uint8_t 
     // DOP (非官方NOP变体)
     case 0x04: case 0x14: case 0x34: case 0x44: case 0x54: case 0x64: case 0x74:
     case 0x80: case 0x82: case 0x89: case 0xC2: case 0xD4: case 0xE2: case 0xF4:
+    // TOP (非官方NOP变体，绝对寻址)
+    case 0x0C:
+    // TOP - Triple NOP with AbsoluteX addressing (非官方NOP变体，使用绝对X变址寻址)
+    case 0x1C: case 0x3C: case 0x5C: case 0x7C: case 0xDC: case 0xFC:
     // 非官方SBC变体
     case 0xEB:
+    // 非官方NOP变体 (隐含寻址)
+    case 0x1A: case 0x3A: case 0x5A: case 0x7A: case 0xDA: case 0xFA:
         isUnofficialOpcode = true;
         break;
     }
@@ -598,13 +626,41 @@ std::string CPU::DisassembleInstruction(uint8_t opcode, uint8_t param1, uint8_t 
     // 根据寻址模式格式化参数，匹配nestest.log格式
     switch (opcode)
     {
+    // TOP指令 - 非官方带绝对寻址的NOP
+    case 0x0C: // Absolute
+    {
+        char buf[32];
+        uint16_t addr = param1 | (param2 << 8);
+        uint8_t memValue = memory.Read(addr);
+        snprintf(buf, sizeof(buf), " $%04X = %02X", addr, memValue);
+        result += buf;
+    }
+    break;
+    
+    // TOP指令 - 非官方带绝对X变址寻址的NOP
+    case 0x1C: case 0x3C: case 0x5C: case 0x7C: case 0xDC: case 0xFC: // AbsoluteX
+    {
+        char buf[32];
+        uint16_t baseAddr = param1 | (param2 << 8);
+        uint16_t effectiveAddr = baseAddr + registers.X;
+        uint8_t memValue = memory.Read(effectiveAddr);
+        snprintf(buf, sizeof(buf), " $%04X,X @ %04X = %02X", baseAddr, effectiveAddr, memValue);
+        result += buf;
+    }
+    break;
+    
     // DOP指令 (非官方NOP变体)
     case 0x04: case 0x14: case 0x34: case 0x44: case 0x54: case 0x64: case 0x74: // ZeroPage
     case 0x80: case 0x82: case 0x89: case 0xC2: case 0xD4: case 0xE2: case 0xF4: // Immediate
     {
-        char buf[16];
-        if (opcode == 0x04 || opcode == 0x14 || opcode == 0x34 || opcode == 0x44 || 
-            opcode == 0x54 || opcode == 0x64 || opcode == 0x74 || opcode == 0xD4 || opcode == 0xF4) {
+        char buf[32];
+        if (opcode == 0x14 || opcode == 0x34 || opcode == 0x54 || 
+            opcode == 0x74 || opcode == 0xD4 || opcode == 0xF4) {
+            // ZeroPageX寻址
+            uint16_t effectiveAddr = (param1 + registers.X) & 0xFF; // 计算有效地址（带X寄存器偏移）
+            uint8_t memValue = memory.Read(effectiveAddr);
+            snprintf(buf, sizeof(buf), " $%02X,X @ %02X = %02X", param1, effectiveAddr, memValue);
+        } else if (opcode == 0x04 || opcode == 0x44 || opcode == 0x64) {
             // ZeroPage寻址
             uint8_t memValue = memory.Read(param1);
             snprintf(buf, sizeof(buf), " $%02X = %02X", param1, memValue);
