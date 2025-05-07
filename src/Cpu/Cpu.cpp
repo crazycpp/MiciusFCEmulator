@@ -199,7 +199,7 @@ void CPU::InitInstructionTable()
     instructionTable[0x4E] = std::make_unique<LSR>(addressingModes[AddressingMode::Absolute].get());
     instructionTable[0x5E] = std::make_unique<LSR>(addressingModes[AddressingMode::AbsoluteX].get());
 
-    // NOP - No Operation
+    // NOP - No Operation (官方)
     instructionTable[0xEA] = std::make_unique<NOP>(addressingModes[AddressingMode::Implied].get());
 
     // ORA - Logical Inclusive OR
@@ -299,6 +299,78 @@ void CPU::InitInstructionTable()
     instructionTable[0x87] = std::make_unique<SAX>(addressingModes[AddressingMode::ZeroPage].get());
     instructionTable[0x8F] = std::make_unique<SAX>(addressingModes[AddressingMode::Absolute].get());
     instructionTable[0x97] = std::make_unique<SAX>(addressingModes[AddressingMode::ZeroPageY].get());
+
+    // DOP - Double NOP (非官方NOP变体，带参数但不做任何事)
+    instructionTable[0x04] = std::make_unique<DOP>(addressingModes[AddressingMode::ZeroPage].get());
+    instructionTable[0x14] = std::make_unique<DOP>(addressingModes[AddressingMode::ZeroPageX].get());
+    instructionTable[0x34] = std::make_unique<DOP>(addressingModes[AddressingMode::ZeroPageX].get());
+    instructionTable[0x44] = std::make_unique<DOP>(addressingModes[AddressingMode::ZeroPage].get());
+    instructionTable[0x54] = std::make_unique<DOP>(addressingModes[AddressingMode::ZeroPageX].get());
+    instructionTable[0x64] = std::make_unique<DOP>(addressingModes[AddressingMode::ZeroPage].get());
+    instructionTable[0x74] = std::make_unique<DOP>(addressingModes[AddressingMode::ZeroPageX].get());
+    instructionTable[0x80] = std::make_unique<DOP>(addressingModes[AddressingMode::Immediate].get());
+    instructionTable[0x82] = std::make_unique<DOP>(addressingModes[AddressingMode::Immediate].get());
+    instructionTable[0x89] = std::make_unique<DOP>(addressingModes[AddressingMode::Immediate].get());
+    instructionTable[0xC2] = std::make_unique<DOP>(addressingModes[AddressingMode::Immediate].get());
+    instructionTable[0xD4] = std::make_unique<DOP>(addressingModes[AddressingMode::ZeroPageX].get());
+    instructionTable[0xE2] = std::make_unique<DOP>(addressingModes[AddressingMode::Immediate].get());
+    instructionTable[0xF4] = std::make_unique<DOP>(addressingModes[AddressingMode::ZeroPageX].get());
+
+    // 非官方指令
+    
+    // SLO - Shift Left then OR (ASL + ORA)
+    instructionTable[0x03] = std::make_unique<SLO>(addressingModes[AddressingMode::IndirectX].get());
+    instructionTable[0x07] = std::make_unique<SLO>(addressingModes[AddressingMode::ZeroPage].get());
+    instructionTable[0x0F] = std::make_unique<SLO>(addressingModes[AddressingMode::Absolute].get());
+    instructionTable[0x13] = std::make_unique<SLO>(addressingModes[AddressingMode::IndirectY].get());
+    instructionTable[0x17] = std::make_unique<SLO>(addressingModes[AddressingMode::ZeroPageX].get());
+    instructionTable[0x1B] = std::make_unique<SLO>(addressingModes[AddressingMode::AbsoluteY].get());
+    instructionTable[0x1F] = std::make_unique<SLO>(addressingModes[AddressingMode::AbsoluteX].get());
+    
+    // RLA - Rotate Left then AND (ROL + AND)
+    instructionTable[0x23] = std::make_unique<RLA>(addressingModes[AddressingMode::IndirectX].get());
+    instructionTable[0x27] = std::make_unique<RLA>(addressingModes[AddressingMode::ZeroPage].get());
+    instructionTable[0x2F] = std::make_unique<RLA>(addressingModes[AddressingMode::Absolute].get());
+    instructionTable[0x33] = std::make_unique<RLA>(addressingModes[AddressingMode::IndirectY].get());
+    instructionTable[0x37] = std::make_unique<RLA>(addressingModes[AddressingMode::ZeroPageX].get());
+    instructionTable[0x3B] = std::make_unique<RLA>(addressingModes[AddressingMode::AbsoluteY].get());
+    instructionTable[0x3F] = std::make_unique<RLA>(addressingModes[AddressingMode::AbsoluteX].get());
+    
+    // SRE - Shift Right then EOR (LSR + EOR)
+    instructionTable[0x43] = std::make_unique<SRE>(addressingModes[AddressingMode::IndirectX].get());
+    instructionTable[0x47] = std::make_unique<SRE>(addressingModes[AddressingMode::ZeroPage].get());
+    instructionTable[0x4F] = std::make_unique<SRE>(addressingModes[AddressingMode::Absolute].get());
+    instructionTable[0x53] = std::make_unique<SRE>(addressingModes[AddressingMode::IndirectY].get());
+    instructionTable[0x57] = std::make_unique<SRE>(addressingModes[AddressingMode::ZeroPageX].get());
+    instructionTable[0x5B] = std::make_unique<SRE>(addressingModes[AddressingMode::AbsoluteY].get());
+    instructionTable[0x5F] = std::make_unique<SRE>(addressingModes[AddressingMode::AbsoluteX].get());
+    
+    // RRA - Rotate Right then Add with Carry (ROR + ADC)
+    instructionTable[0x63] = std::make_unique<RRA>(addressingModes[AddressingMode::IndirectX].get());
+    instructionTable[0x67] = std::make_unique<RRA>(addressingModes[AddressingMode::ZeroPage].get());
+    instructionTable[0x6F] = std::make_unique<RRA>(addressingModes[AddressingMode::Absolute].get());
+    instructionTable[0x73] = std::make_unique<RRA>(addressingModes[AddressingMode::IndirectY].get());
+    instructionTable[0x77] = std::make_unique<RRA>(addressingModes[AddressingMode::ZeroPageX].get());
+    instructionTable[0x7B] = std::make_unique<RRA>(addressingModes[AddressingMode::AbsoluteY].get());
+    instructionTable[0x7F] = std::make_unique<RRA>(addressingModes[AddressingMode::AbsoluteX].get());
+    
+    // DCP - Decrement Memory then Compare (DEC + CMP)
+    instructionTable[0xC3] = std::make_unique<DCP>(addressingModes[AddressingMode::IndirectX].get());
+    instructionTable[0xC7] = std::make_unique<DCP>(addressingModes[AddressingMode::ZeroPage].get());
+    instructionTable[0xCF] = std::make_unique<DCP>(addressingModes[AddressingMode::Absolute].get());
+    instructionTable[0xD3] = std::make_unique<DCP>(addressingModes[AddressingMode::IndirectY].get());
+    instructionTable[0xD7] = std::make_unique<DCP>(addressingModes[AddressingMode::ZeroPageX].get());
+    instructionTable[0xDB] = std::make_unique<DCP>(addressingModes[AddressingMode::AbsoluteY].get());
+    instructionTable[0xDF] = std::make_unique<DCP>(addressingModes[AddressingMode::AbsoluteX].get());
+    
+    // ISB - Increment Memory then Subtract (INC + SBC)
+    instructionTable[0xE3] = std::make_unique<ISB>(addressingModes[AddressingMode::IndirectX].get());
+    instructionTable[0xE7] = std::make_unique<ISB>(addressingModes[AddressingMode::ZeroPage].get());
+    instructionTable[0xEF] = std::make_unique<ISB>(addressingModes[AddressingMode::Absolute].get());
+    instructionTable[0xF3] = std::make_unique<ISB>(addressingModes[AddressingMode::IndirectY].get());
+    instructionTable[0xF7] = std::make_unique<ISB>(addressingModes[AddressingMode::ZeroPageX].get());
+    instructionTable[0xFB] = std::make_unique<ISB>(addressingModes[AddressingMode::AbsoluteY].get());
+    instructionTable[0xFF] = std::make_unique<ISB>(addressingModes[AddressingMode::AbsoluteX].get());
 }
 
 uint8_t CPU::Step()
@@ -452,38 +524,38 @@ std::string CPU::DisassembleInstruction(uint8_t opcode, uint8_t param1, uint8_t 
 
     // 指令助记符表
     static const char *mnemonics[] = {
-        "BRK", "ORA", "???", "???", "???", "ORA", "ASL", "???", // 0x00-0x07
-        "PHP", "ORA", "ASL", "???", "???", "ORA", "ASL", "???", // 0x08-0x0F
-        "BPL", "ORA", "???", "???", "???", "ORA", "ASL", "???", // 0x10-0x17
-        "CLC", "ORA", "???", "???", "???", "ORA", "ASL", "???", // 0x18-0x1F
-        "JSR", "AND", "???", "???", "BIT", "AND", "ROL", "???", // 0x20-0x27
-        "PLP", "AND", "ROL", "???", "BIT", "AND", "ROL", "???", // 0x28-0x2F
-        "BMI", "AND", "???", "???", "???", "AND", "ROL", "???", // 0x30-0x37
-        "SEC", "AND", "???", "???", "???", "AND", "ROL", "???", // 0x38-0x3F
-        "RTI", "EOR", "???", "???", "???", "EOR", "LSR", "???", // 0x40-0x47
-        "PHA", "EOR", "LSR", "???", "JMP", "EOR", "LSR", "???", // 0x48-0x4F
-        "BVC", "EOR", "???", "???", "???", "EOR", "LSR", "???", // 0x50-0x57
-        "CLI", "EOR", "???", "???", "???", "EOR", "LSR", "???", // 0x58-0x5F
-        "RTS", "ADC", "???", "???", "???", "ADC", "ROR", "???", // 0x60-0x67
-        "PLA", "ADC", "ROR", "???", "JMP", "ADC", "ROR", "???", // 0x68-0x6F
-        "BVS", "ADC", "???", "???", "???", "ADC", "ROR", "???", // 0x70-0x77
-        "SEI", "ADC", "???", "???", "???", "ADC", "ROR", "???", // 0x78-0x7F
-        "???", "STA", "???", "SAX", "STY", "STA", "STX", "SAX", // 0x80-0x87 - Added SAX at 0x83, 0x87
-        "DEY", "???", "TXA", "???", "STY", "STA", "STX", "SAX", // 0x88-0x8F - Added SAX at 0x8F
-        "BCC", "STA", "???", "???", "STY", "STA", "STX", "SAX", // 0x90-0x97 - Added SAX at 0x97
+        "BRK", "ORA", "???", "SLO", "NOP", "ORA", "ASL", "SLO", // 0x00-0x07
+        "PHP", "ORA", "ASL", "???", "???", "ORA", "ASL", "SLO", // 0x08-0x0F
+        "BPL", "ORA", "???", "SLO", "NOP", "ORA", "ASL", "SLO", // 0x10-0x17
+        "CLC", "ORA", "???", "SLO", "???", "ORA", "ASL", "SLO", // 0x18-0x1F
+        "JSR", "AND", "???", "RLA", "BIT", "AND", "ROL", "RLA", // 0x20-0x27
+        "PLP", "AND", "ROL", "???", "BIT", "AND", "ROL", "RLA", // 0x28-0x2F
+        "BMI", "AND", "???", "RLA", "NOP", "AND", "ROL", "RLA", // 0x30-0x37
+        "SEC", "AND", "???", "RLA", "???", "AND", "ROL", "RLA", // 0x38-0x3F
+        "RTI", "EOR", "???", "SRE", "NOP", "EOR", "LSR", "SRE", // 0x40-0x47
+        "PHA", "EOR", "LSR", "???", "JMP", "EOR", "LSR", "SRE", // 0x48-0x4F
+        "BVC", "EOR", "???", "SRE", "NOP", "EOR", "LSR", "SRE", // 0x50-0x57
+        "CLI", "EOR", "???", "SRE", "???", "EOR", "LSR", "SRE", // 0x58-0x5F
+        "RTS", "ADC", "???", "RRA", "NOP", "ADC", "ROR", "RRA", // 0x60-0x67
+        "PLA", "ADC", "ROR", "???", "JMP", "ADC", "ROR", "RRA", // 0x68-0x6F
+        "BVS", "ADC", "???", "RRA", "NOP", "ADC", "ROR", "RRA", // 0x70-0x77
+        "SEI", "ADC", "???", "RRA", "???", "ADC", "ROR", "RRA", // 0x78-0x7F
+        "NOP", "STA", "NOP", "SAX", "STY", "STA", "STX", "SAX", // 0x80-0x87
+        "DEY", "NOP", "TXA", "???", "STY", "STA", "STX", "SAX", // 0x88-0x8F
+        "BCC", "STA", "???", "???", "STY", "STA", "STX", "SAX", // 0x90-0x97
         "TYA", "STA", "TXS", "???", "???", "STA", "???", "???", // 0x98-0x9F
-        "LDY", "LDA", "LDX", "LAX", "LDY", "LDA", "LDX", "LAX", // 0xA0-0xA7 - Added LAX at 0xA3, 0xA7
-        "TAY", "LDA", "TAX", "???", "LDY", "LDA", "LDX", "LAX", // 0xA8-0xAF - Added LAX at 0xAF
-        "BCS", "LDA", "???", "LAX", "LDY", "LDA", "LDX", "LAX", // 0xB0-0xB7 - Added LAX at 0xB3, 0xB7
-        "CLV", "LDA", "TSX", "???", "LDY", "LDA", "LDX", "LAX", // 0xB8-0xBF - Added LAX at 0xBF
-        "CPY", "CMP", "???", "???", "CPY", "CMP", "DEC", "???", // 0xC0-0xC7
-        "INY", "CMP", "DEX", "???", "CPY", "CMP", "DEC", "???", // 0xC8-0xCF
-        "BNE", "CMP", "???", "???", "???", "CMP", "DEC", "???", // 0xD0-0xD7
-        "CLD", "CMP", "???", "???", "???", "CMP", "DEC", "???", // 0xD8-0xDF
-        "CPX", "SBC", "???", "???", "CPX", "SBC", "INC", "???", // 0xE0-0xE7
-        "INX", "SBC", "NOP", "SBC", "CPX", "SBC", "INC", "???", // 0xE8-0xEF - Added SBC at 0xEB
-        "BEQ", "SBC", "???", "???", "???", "SBC", "INC", "???", // 0xF0-0xF7
-        "SED", "SBC", "???", "???", "???", "SBC", "INC", "???"  // 0xF8-0xFF
+        "LDY", "LDA", "LDX", "LAX", "LDY", "LDA", "LDX", "LAX", // 0xA0-0xA7
+        "TAY", "LDA", "TAX", "???", "LDY", "LDA", "LDX", "LAX", // 0xA8-0xAF
+        "BCS", "LDA", "???", "LAX", "LDY", "LDA", "LDX", "LAX", // 0xB0-0xB7
+        "CLV", "LDA", "TSX", "???", "LDY", "LDA", "LDX", "LAX", // 0xB8-0xBF
+        "CPY", "CMP", "NOP", "DCP", "CPY", "CMP", "DEC", "DCP", // 0xC0-0xC7
+        "INY", "CMP", "DEX", "???", "CPY", "CMP", "DEC", "DCP", // 0xC8-0xCF
+        "BNE", "CMP", "???", "DCP", "NOP", "CMP", "DEC", "DCP", // 0xD0-0xD7
+        "CLD", "CMP", "???", "DCP", "???", "CMP", "DEC", "DCP", // 0xD8-0xDF
+        "CPX", "SBC", "NOP", "ISB", "CPX", "SBC", "INC", "ISB", // 0xE0-0xE7
+        "INX", "SBC", "NOP", "SBC", "CPX", "SBC", "INC", "ISB", // 0xE8-0xEF
+        "BEQ", "SBC", "???", "ISB", "NOP", "SBC", "INC", "ISB", // 0xF0-0xF7
+        "SED", "SBC", "???", "ISB", "???", "SBC", "INC", "ISB"  // 0xF8-0xFF
     };
 
     // 获取指令助记符
@@ -492,9 +564,28 @@ std::string CPU::DisassembleInstruction(uint8_t opcode, uint8_t param1, uint8_t 
     // 检查是否为非官方指令，如果是则添加*前缀
     bool isUnofficialOpcode = false;
     switch (opcode) {
-    case 0x83: case 0x87: case 0x8F: case 0x97: // SAX 非官方指令
-    case 0xA3: case 0xA7: case 0xAF: case 0xB3: case 0xB7: case 0xBF: // LAX 非官方指令
-    case 0xEB: // SBC 非官方变体
+    // 非官方指令列表
+    // SLO
+    case 0x03: case 0x07: case 0x0F: case 0x13: case 0x17: case 0x1B: case 0x1F:
+    // RLA
+    case 0x23: case 0x27: case 0x2F: case 0x33: case 0x37: case 0x3B: case 0x3F:
+    // SRE
+    case 0x43: case 0x47: case 0x4F: case 0x53: case 0x57: case 0x5B: case 0x5F:
+    // RRA
+    case 0x63: case 0x67: case 0x6F: case 0x73: case 0x77: case 0x7B: case 0x7F:
+    // SAX
+    case 0x83: case 0x87: case 0x8F: case 0x97:
+    // LAX
+    case 0xA3: case 0xA7: case 0xAF: case 0xB3: case 0xB7: case 0xBF:
+    // DCP
+    case 0xC3: case 0xC7: case 0xCF: case 0xD3: case 0xD7: case 0xDB: case 0xDF:
+    // ISB
+    case 0xE3: case 0xE7: case 0xEF: case 0xF3: case 0xF7: case 0xFB: case 0xFF:
+    // DOP (非官方NOP变体)
+    case 0x04: case 0x14: case 0x34: case 0x44: case 0x54: case 0x64: case 0x74:
+    case 0x80: case 0x82: case 0x89: case 0xC2: case 0xD4: case 0xE2: case 0xF4:
+    // 非官方SBC变体
+    case 0xEB:
         isUnofficialOpcode = true;
         break;
     }
@@ -507,6 +598,174 @@ std::string CPU::DisassembleInstruction(uint8_t opcode, uint8_t param1, uint8_t 
     // 根据寻址模式格式化参数，匹配nestest.log格式
     switch (opcode)
     {
+    // DOP指令 (非官方NOP变体)
+    case 0x04: case 0x14: case 0x34: case 0x44: case 0x54: case 0x64: case 0x74: // ZeroPage
+    case 0x80: case 0x82: case 0x89: case 0xC2: case 0xD4: case 0xE2: case 0xF4: // Immediate
+    {
+        char buf[16];
+        if (opcode == 0x04 || opcode == 0x14 || opcode == 0x34 || opcode == 0x44 || 
+            opcode == 0x54 || opcode == 0x64 || opcode == 0x74 || opcode == 0xD4 || opcode == 0xF4) {
+            // ZeroPage寻址
+            uint8_t memValue = memory.Read(param1);
+            snprintf(buf, sizeof(buf), " $%02X = %02X", param1, memValue);
+        } else {
+            // Immediate寻址
+            snprintf(buf, sizeof(buf), " #$%02X", param1);
+        }
+        result += buf;
+    }
+    break;
+
+    // SLO指令 (非官方)
+    case 0x07: case 0x17: case 0x0F: case 0x1F: case 0x1B: case 0x03: case 0x13:
+    {
+        char buf[32];
+        if (opcode == 0x07 || opcode == 0x17) { // ZeroPage
+            uint8_t memValue = memory.Read(param1);
+            snprintf(buf, sizeof(buf), " $%02X = %02X", param1, memValue);
+        } else if (opcode == 0x0F || opcode == 0x1F) { // Absolute
+            uint8_t memValue = memory.Read(param1 | (param2 << 8));
+            snprintf(buf, sizeof(buf), " $%04X = %02X", param1 | (param2 << 8), memValue);
+        } else if (opcode == 0x1B) { // Absolute,Y
+            uint8_t memValue = memory.Read((param1 | (param2 << 8)) + registers.Y);
+            snprintf(buf, sizeof(buf), " $%04X,Y @ %04X = %02X", param1 | (param2 << 8), (param1 | (param2 << 8)) + registers.Y, memValue);
+        } else if (opcode == 0x03 || opcode == 0x13) { // (Indirect,X) or (Indirect),Y
+            uint16_t addr = (opcode == 0x03) ? 
+                memory.Read((param1 + registers.X) & 0xFF) | (memory.Read((param1 + registers.X + 1) & 0xFF) << 8) :
+                memory.Read(param1) | (memory.Read((param1 + 1) & 0xFF) << 8);
+            if (opcode == 0x13) addr += registers.Y;
+            uint8_t memValue = memory.Read(addr);
+            snprintf(buf, sizeof(buf), " (%02X),%c @ %04X = %02X", param1, (opcode == 0x03) ? 'X' : 'Y', addr, memValue);
+        }
+        result += buf;
+    }
+    break;
+
+    // RLA指令 (非官方)
+    case 0x27: case 0x37: case 0x2F: case 0x3F: case 0x3B: case 0x23: case 0x33:
+    {
+        char buf[32];
+        if (opcode == 0x27 || opcode == 0x37) { // ZeroPage
+            uint8_t memValue = memory.Read(param1);
+            snprintf(buf, sizeof(buf), " $%02X = %02X", param1, memValue);
+        } else if (opcode == 0x2F || opcode == 0x3F) { // Absolute
+            uint8_t memValue = memory.Read(param1 | (param2 << 8));
+            snprintf(buf, sizeof(buf), " $%04X = %02X", param1 | (param2 << 8), memValue);
+        } else if (opcode == 0x3B) { // Absolute,Y
+            uint8_t memValue = memory.Read((param1 | (param2 << 8)) + registers.Y);
+            snprintf(buf, sizeof(buf), " $%04X,Y @ %04X = %02X", param1 | (param2 << 8), (param1 | (param2 << 8)) + registers.Y, memValue);
+        } else if (opcode == 0x23 || opcode == 0x33) { // (Indirect,X) or (Indirect),Y
+            uint16_t addr = (opcode == 0x23) ? 
+                memory.Read((param1 + registers.X) & 0xFF) | (memory.Read((param1 + registers.X + 1) & 0xFF) << 8) :
+                memory.Read(param1) | (memory.Read((param1 + 1) & 0xFF) << 8);
+            if (opcode == 0x33) addr += registers.Y;
+            uint8_t memValue = memory.Read(addr);
+            snprintf(buf, sizeof(buf), " (%02X),%c @ %04X = %02X", param1, (opcode == 0x23) ? 'X' : 'Y', addr, memValue);
+        }
+        result += buf;
+    }
+    break;
+
+    // SRE指令 (非官方)
+    case 0x47: case 0x57: case 0x4F: case 0x5F: case 0x5B: case 0x43: case 0x53:
+    {
+        char buf[32];
+        if (opcode == 0x47 || opcode == 0x57) { // ZeroPage
+            uint8_t memValue = memory.Read(param1);
+            snprintf(buf, sizeof(buf), " $%02X = %02X", param1, memValue);
+        } else if (opcode == 0x4F || opcode == 0x5F) { // Absolute
+            uint8_t memValue = memory.Read(param1 | (param2 << 8));
+            snprintf(buf, sizeof(buf), " $%04X = %02X", param1 | (param2 << 8), memValue);
+        } else if (opcode == 0x5B) { // Absolute,Y
+            uint8_t memValue = memory.Read((param1 | (param2 << 8)) + registers.Y);
+            snprintf(buf, sizeof(buf), " $%04X,Y @ %04X = %02X", param1 | (param2 << 8), (param1 | (param2 << 8)) + registers.Y, memValue);
+        } else if (opcode == 0x43 || opcode == 0x53) { // (Indirect,X) or (Indirect),Y
+            uint16_t addr = (opcode == 0x43) ? 
+                memory.Read((param1 + registers.X) & 0xFF) | (memory.Read((param1 + registers.X + 1) & 0xFF) << 8) :
+                memory.Read(param1) | (memory.Read((param1 + 1) & 0xFF) << 8);
+            if (opcode == 0x53) addr += registers.Y;
+            uint8_t memValue = memory.Read(addr);
+            snprintf(buf, sizeof(buf), " (%02X),%c @ %04X = %02X", param1, (opcode == 0x43) ? 'X' : 'Y', addr, memValue);
+        }
+        result += buf;
+    }
+    break;
+
+    // RRA指令 (非官方)
+    case 0x67: case 0x77: case 0x6F: case 0x7F: case 0x7B: case 0x63: case 0x73:
+    {
+        char buf[32];
+        if (opcode == 0x67 || opcode == 0x77) { // ZeroPage
+            uint8_t memValue = memory.Read(param1);
+            snprintf(buf, sizeof(buf), " $%02X = %02X", param1, memValue);
+        } else if (opcode == 0x6F || opcode == 0x7F) { // Absolute
+            uint8_t memValue = memory.Read(param1 | (param2 << 8));
+            snprintf(buf, sizeof(buf), " $%04X = %02X", param1 | (param2 << 8), memValue);
+        } else if (opcode == 0x7B) { // Absolute,Y
+            uint8_t memValue = memory.Read((param1 | (param2 << 8)) + registers.Y);
+            snprintf(buf, sizeof(buf), " $%04X,Y @ %04X = %02X", param1 | (param2 << 8), (param1 | (param2 << 8)) + registers.Y, memValue);
+        } else if (opcode == 0x63 || opcode == 0x73) { // (Indirect,X) or (Indirect),Y
+            uint16_t addr = (opcode == 0x63) ? 
+                memory.Read((param1 + registers.X) & 0xFF) | (memory.Read((param1 + registers.X + 1) & 0xFF) << 8) :
+                memory.Read(param1) | (memory.Read((param1 + 1) & 0xFF) << 8);
+            if (opcode == 0x73) addr += registers.Y;
+            uint8_t memValue = memory.Read(addr);
+            snprintf(buf, sizeof(buf), " (%02X),%c @ %04X = %02X", param1, (opcode == 0x63) ? 'X' : 'Y', addr, memValue);
+        }
+        result += buf;
+    }
+    break;
+
+    // ISB指令 (非官方)
+    case 0xE7: case 0xF7: case 0xEF: case 0xFF: case 0xFB: case 0xE3: case 0xF3:
+    {
+        char buf[32];
+        if (opcode == 0xE7 || opcode == 0xF7) { // ZeroPage
+            uint8_t memValue = memory.Read(param1);
+            snprintf(buf, sizeof(buf), " $%02X = %02X", param1, memValue);
+        } else if (opcode == 0xEF || opcode == 0xFF) { // Absolute
+            uint8_t memValue = memory.Read(param1 | (param2 << 8));
+            snprintf(buf, sizeof(buf), " $%04X = %02X", param1 | (param2 << 8), memValue);
+        } else if (opcode == 0xFB) { // Absolute,Y
+            uint8_t memValue = memory.Read((param1 | (param2 << 8)) + registers.Y);
+            snprintf(buf, sizeof(buf), " $%04X,Y @ %04X = %02X", param1 | (param2 << 8), (param1 | (param2 << 8)) + registers.Y, memValue);
+        } else if (opcode == 0xE3 || opcode == 0xF3) { // (Indirect,X) or (Indirect),Y
+            uint16_t addr = (opcode == 0xE3) ? 
+                memory.Read((param1 + registers.X) & 0xFF) | (memory.Read((param1 + registers.X + 1) & 0xFF) << 8) :
+                memory.Read(param1) | (memory.Read((param1 + 1) & 0xFF) << 8);
+            if (opcode == 0xF3) addr += registers.Y;
+            uint8_t memValue = memory.Read(addr);
+            snprintf(buf, sizeof(buf), " (%02X),%c @ %04X = %02X", param1, (opcode == 0xE3) ? 'X' : 'Y', addr, memValue);
+        }
+        result += buf;
+    }
+    break;
+
+    // DCP指令 (非官方)
+    case 0xC7: case 0xD7: case 0xCF: case 0xDF: case 0xDB: case 0xC3: case 0xD3:
+    {
+        char buf[32];
+        if (opcode == 0xC7 || opcode == 0xD7) { // ZeroPage
+            uint8_t memValue = memory.Read(param1);
+            snprintf(buf, sizeof(buf), " $%02X = %02X", param1, memValue);
+        } else if (opcode == 0xCF || opcode == 0xDF) { // Absolute
+            uint8_t memValue = memory.Read(param1 | (param2 << 8));
+            snprintf(buf, sizeof(buf), " $%04X = %02X", param1 | (param2 << 8), memValue);
+        } else if (opcode == 0xDB) { // Absolute,Y
+            uint8_t memValue = memory.Read((param1 | (param2 << 8)) + registers.Y);
+            snprintf(buf, sizeof(buf), " $%04X,Y @ %04X = %02X", param1 | (param2 << 8), (param1 | (param2 << 8)) + registers.Y, memValue);
+        } else if (opcode == 0xC3 || opcode == 0xD3) { // (Indirect,X) or (Indirect),Y
+            uint16_t addr = (opcode == 0xC3) ? 
+                memory.Read((param1 + registers.X) & 0xFF) | (memory.Read((param1 + registers.X + 1) & 0xFF) << 8) :
+                memory.Read(param1) | (memory.Read((param1 + 1) & 0xFF) << 8);
+            if (opcode == 0xD3) addr += registers.Y;
+            uint8_t memValue = memory.Read(addr);
+            snprintf(buf, sizeof(buf), " (%02X),%c @ %04X = %02X", param1, (opcode == 0xC3) ? 'X' : 'Y', addr, memValue);
+        }
+        result += buf;
+    }
+    break;
+
     // 隐含寻址
     case 0x0A:
     case 0x2A:
@@ -529,387 +788,6 @@ std::string CPU::DisassembleInstruction(uint8_t opcode, uint8_t param1, uint8_t 
         uint16_t target = registers.PC + 2 + offset;
         char buf[8];
         snprintf(buf, sizeof(buf), " $%04X", target);
-        result += buf;
-    }
-    break;
-
-    // 立即数寻址
-    case 0x09:
-    case 0x29:
-    case 0x49:
-    case 0x69: // ORA, AND, EOR, ADC
-    case 0xA0:
-    case 0xA2:
-    case 0xA9:
-    case 0xC0: // LDY, LDX, LDA, CPY
-    case 0xC9:
-    case 0xE0:
-    case 0xE9: // CMP, CPX, SBC
-    case 0xEB: // 非官方 SBC 立即数
-    {
-        char buf[6];
-        snprintf(buf, sizeof(buf), " #$%02X", param1);
-        result += buf;
-    }
-    break;
-
-    // 零页寻址
-    case 0x05:
-    case 0x25:
-    case 0x45:
-    case 0x65: // ORA, AND, EOR, ADC
-    case 0x06:
-    case 0x26:
-    case 0x46:
-    case 0x66: // ASL, ROL, LSR, ROR
-    case 0x24:
-    case 0x84:
-    case 0x85:
-    case 0x86: // BIT, STY, STA, STX
-    case 0xA4:
-    case 0xA5:
-    case 0xA6:
-    case 0xC4: // LDY, LDA, LDX, CPY
-    case 0xC5:
-    case 0xC6:
-    case 0xE4:
-    case 0xE5: // CMP, DEC, CPX, SBC
-    case 0xE6: // INC
-    {
-        char buf[12];
-        // 读取内存位置的值，匹配nestest.log格式
-        uint8_t memValue = memory.Read(param1);
-        snprintf(buf, sizeof(buf), " $%02X = %02X", param1, memValue);
-        result += buf;
-    }
-    break;
-
-    // 零页X寻址
-    case 0x15:
-    case 0x35:
-    case 0x55:
-    case 0x75: // ORA, AND, EOR, ADC
-    case 0x16:
-    case 0x36:
-    case 0x56:
-    case 0x76: // ASL, ROL, LSR, ROR
-    case 0x94:
-    case 0x95:
-    case 0xB4:
-    case 0xB5: // STY, STA, LDY, LDA
-    case 0xD5:
-    case 0xD6:
-    case 0xF5:
-    case 0xF6: // CMP, DEC, SBC, INC
-    {
-        char buf[16];
-        // 计算实际地址
-        uint8_t addr = (param1 + registers.X) & 0xFF;
-        uint8_t memValue = memory.Read(addr);
-        snprintf(buf, sizeof(buf), " $%02X,X @ %02X = %02X", param1, addr, memValue);
-        result += buf;
-    }
-    break;
-
-    // 零页Y寻址
-    case 0x96:
-    case 0xB6: // STX, LDX
-    {
-        char buf[16];
-        // 计算实际地址
-        uint8_t addr = (param1 + registers.Y) & 0xFF;
-        uint8_t memValue = memory.Read(addr);
-        snprintf(buf, sizeof(buf), " $%02X,Y @ %02X = %02X", param1, addr, memValue);
-        result += buf;
-    }
-    break;
-
-    // 绝对寻址
-    case 0x0D:
-    case 0x2D:
-    case 0x4D:
-    case 0x6D: // ORA, AND, EOR, ADC
-    case 0x0E:
-    case 0x2E:
-    case 0x4E:
-    case 0x6E: // ASL, ROL, LSR, ROR
-    case 0x20:
-    case 0x2C:
-    case 0x4C:
-    case 0x8C: // JSR, BIT, JMP, STY
-    case 0x8D:
-    case 0x8E:
-    case 0xAC:
-    case 0xAD: // STA, STX, LDY, LDA
-    case 0xAE:
-    case 0xCC:
-    case 0xCD:
-    case 0xCE: // LDX, CPY, CMP, DEC
-    case 0xEC:
-    case 0xED:
-    case 0xEE: // CPX, SBC, INC
-    {
-        char buf[16];
-        uint16_t addr = param1 | (param2 << 8);
-
-        // 对于JSR和JMP，不需要显示内存值
-        if (opcode == 0x20 || opcode == 0x4C)
-        {
-            snprintf(buf, sizeof(buf), " $%04X", addr);
-        }
-        else
-        {
-            // 读取内存位置的值
-            uint8_t memValue = memory.Read(addr);
-            snprintf(buf, sizeof(buf), " $%04X = %02X", addr, memValue);
-        }
-        result += buf;
-    }
-    break;
-
-    // 绝对X寻址
-    case 0x1D:
-    case 0x3D:
-    case 0x5D:
-    case 0x7D: // ORA, AND, EOR, ADC
-    case 0x1E:
-    case 0x3E:
-    case 0x5E:
-    case 0x7E: // ASL, ROL, LSR, ROR
-    case 0x9D:
-    case 0xBC:
-    case 0xBD:
-    case 0xDD: // STA, LDY, LDA, CMP
-    case 0xDE:
-    case 0xFD:
-    case 0xFE: // DEC, SBC, INC
-    {
-        char buf[24];
-        uint16_t baseAddr = param1 | (param2 << 8);
-        uint16_t addr = baseAddr + registers.X;
-        uint8_t memValue = memory.Read(addr);
-
-        // 检查是否跨页
-        if ((baseAddr & 0xFF00) != (addr & 0xFF00))
-        {
-            snprintf(buf, sizeof(buf), " $%04X,X @ %04X = %02X", baseAddr, addr, memValue);
-        }
-        else
-        {
-            snprintf(buf, sizeof(buf), " $%04X,X = %02X", baseAddr, memValue);
-        }
-        result += buf;
-    }
-    break;
-
-    // 绝对Y寻址
-    case 0x19:
-    case 0x39:
-    case 0x59:
-    case 0x79: // ORA, AND, EOR, ADC
-    case 0x99:
-    case 0xB9:
-    case 0xD9:
-    case 0xF9: // STA, LDA, CMP, SBC
-    case 0xBE: // LDX AbsoluteY
-    {
-        char buf[24];
-        uint16_t baseAddr = param1 | (param2 << 8);
-        uint16_t addr = baseAddr + registers.Y;
-        uint8_t memValue = memory.Read(addr);
-
-        // 检查是否跨页
-        if ((baseAddr & 0xFF00) != (addr & 0xFF00))
-        {
-            snprintf(buf, sizeof(buf), " $%04X,Y @ %04X = %02X", baseAddr, addr, memValue);
-        }
-        else
-        {
-            snprintf(buf, sizeof(buf), " $%04X,Y = %02X", baseAddr, memValue);
-        }
-        result += buf;
-    }
-    break;
-
-    // 间接寻址
-    case 0x6C: // JMP
-    {
-        char buf[16];
-        uint16_t ptrAddr = param1 | (param2 << 8);
-
-        // 获取目标地址（处理6502的间接跳转bug）
-        uint16_t targetAddr;
-        if ((ptrAddr & 0xFF) == 0xFF)
-        {
-            // 模拟6502的JMP间接寻址页边界bug
-            uint8_t lowByte = memory.Read(ptrAddr);
-            uint8_t highByte = memory.Read(ptrAddr & 0xFF00);
-            targetAddr = (highByte << 8) | lowByte;
-        }
-        else
-        {
-            uint8_t lowByte = memory.Read(ptrAddr);
-            uint8_t highByte = memory.Read(ptrAddr + 1);
-            targetAddr = (highByte << 8) | lowByte;
-        }
-
-        snprintf(buf, sizeof(buf), " ($%04X) = %04X", ptrAddr, targetAddr);
-        result += buf;
-    }
-    break;
-
-    // 间接X寻址
-    case 0x01:
-    case 0x21:
-    case 0x41:
-    case 0x61: // ORA, AND, EOR, ADC
-    case 0x81:
-    case 0xA1:
-    case 0xC1:
-    case 0xE1: // STA, LDA, CMP, SBC
-    case 0xA3: // LAX - Add LAX IndirectX case
-    {
-        char buf[40];
-        uint8_t zpAddr = (param1 + registers.X) & 0xFF;
-        uint8_t lowByte = memory.Read(zpAddr);
-        uint8_t highByte = memory.Read((zpAddr + 1) & 0xFF);
-        uint16_t effectiveAddr = (highByte << 8) | lowByte;
-        uint8_t memValue = memory.Read(effectiveAddr);
-
-        snprintf(buf, sizeof(buf), " ($%02X,X) @ %02X = %04X = %02X", param1, zpAddr, effectiveAddr, memValue);
-        result += buf;
-    }
-    break;
-
-    // 间接Y寻址
-    case 0x11:
-    case 0x31:
-    case 0x51:
-    case 0x71: // ORA, AND, EOR, ADC
-    case 0x91:
-    case 0xB1:
-    case 0xD1:
-    case 0xF1: // STA, LDA, CMP, SBC
-    case 0xB3: // LAX - Add LAX IndirectY case
-    {
-        char buf[32];
-        uint8_t zpAddr = param1;
-        uint8_t lowByte = memory.Read(zpAddr);
-        uint8_t highByte = memory.Read((zpAddr + 1) & 0xFF);
-        uint16_t baseAddr = (highByte << 8) | lowByte;
-        uint16_t effectiveAddr = baseAddr + registers.Y;
-        uint8_t memValue = memory.Read(effectiveAddr);
-
-        // 检查是否跨页
-        if ((baseAddr & 0xFF00) != (effectiveAddr & 0xFF00))
-        {
-            snprintf(buf, sizeof(buf), " ($%02X),Y = %04X @ %04X = %02X", param1, baseAddr, effectiveAddr, memValue);
-        }
-        else
-        {
-            snprintf(buf, sizeof(buf), " ($%02X),Y = %04X = %02X", param1, effectiveAddr, memValue);
-        }
-        result += buf;
-    }
-    break;
-
-    // Add cases for other LAX addressing modes
-    // Zero page LAX
-    case 0xA7:
-    {
-        char buf[16];
-        uint8_t memValue = memory.Read(param1);
-        snprintf(buf, sizeof(buf), " $%02X = %02X", param1, memValue);
-        result += buf;
-    }
-    break;
-
-    // Zero page Y LAX
-    case 0xB7:
-    {
-        char buf[16];
-        uint8_t addr = (param1 + registers.Y) & 0xFF;
-        uint8_t memValue = memory.Read(addr);
-        snprintf(buf, sizeof(buf), " $%02X,Y @ %02X = %02X", param1, addr, memValue);
-        result += buf;
-    }
-    break;
-
-    // Absolute LAX
-    case 0xAF:
-    {
-        char buf[20];
-        uint16_t addr = param1 | (param2 << 8);
-        uint8_t memValue = memory.Read(addr);
-        snprintf(buf, sizeof(buf), " $%04X = %02X", addr, memValue);
-        result += buf;
-    }
-    break;
-
-    // Absolute Y LAX
-    case 0xBF:
-    {
-        char buf[24];
-        uint16_t baseAddr = param1 | (param2 << 8);
-        uint16_t addr = baseAddr + registers.Y;
-        uint8_t memValue = memory.Read(addr);
-
-        // 检查是否跨页
-        if ((baseAddr & 0xFF00) != (addr & 0xFF00))
-        {
-            snprintf(buf, sizeof(buf), " $%04X,Y @ %04X = %02X", baseAddr, addr, memValue);
-        }
-        else
-        {
-            snprintf(buf, sizeof(buf), " $%04X,Y = %02X", baseAddr, memValue);
-        }
-        result += buf;
-    }
-    break;
-
-    // 添加SAX的间接X寻址
-    case 0x83: // SAX IndirectX
-    {
-        char buf[40];
-        uint8_t zpAddr = (param1 + registers.X) & 0xFF;
-        uint8_t lowByte = memory.Read(zpAddr);
-        uint8_t highByte = memory.Read((zpAddr + 1) & 0xFF);
-        uint16_t effectiveAddr = (highByte << 8) | lowByte;
-        uint8_t memValue = memory.Read(effectiveAddr);
-        
-        snprintf(buf, sizeof(buf), " ($%02X,X) @ %02X = %04X = %02X", param1, zpAddr, effectiveAddr, memValue);
-        result += buf;
-    }
-    break;
-
-    // 添加SAX的零页寻址
-    case 0x87: // SAX ZeroPage
-    {
-        char buf[16];
-        uint8_t memValue = memory.Read(param1);
-        snprintf(buf, sizeof(buf), " $%02X = %02X", param1, memValue);
-        result += buf;
-    }
-    break;
-
-    // 添加SAX的绝对寻址
-    case 0x8F: // SAX Absolute
-    {
-        char buf[20];
-        uint16_t addr = param1 | (param2 << 8);
-        uint8_t memValue = memory.Read(addr);
-        snprintf(buf, sizeof(buf), " $%04X = %02X", addr, memValue);
-        result += buf;
-    }
-    break;
-
-    // 添加SAX的零页Y寻址 - 这是你问题中提到的0x97操作码
-    case 0x97: // SAX ZeroPageY
-    {
-        char buf[20];
-        uint8_t addr = (param1 + registers.Y) & 0xFF;
-        uint8_t memValue = memory.Read(addr);
-        snprintf(buf, sizeof(buf), " $%02X,Y @ %02X = %02X", param1, addr, memValue);
         result += buf;
     }
     break;
