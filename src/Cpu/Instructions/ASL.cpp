@@ -33,3 +33,34 @@ void ASL::ExecuteOnMemory(CPU& cpu, uint16_t address) {
     // 写回内存
     cpu.WriteByte(address, value);
 } 
+
+uint8_t ASL::Cycles() const
+{
+    uint8_t cycles = 0;
+    switch (addressingMode->GetType())
+    {
+    case AddressingMode::Accumulator:
+        cycles = 2;
+        break;
+    case AddressingMode::ZeroPage:
+        cycles = 5;
+        break;
+    case AddressingMode::ZeroPageX:
+        cycles = 6;
+        break;
+    case AddressingMode::Absolute:
+        cycles = 6;
+        break;
+    case AddressingMode::AbsoluteX:
+        cycles = 7;
+        break;
+    }
+    // 如果跨页，则增加1个周期
+    if (addressingMode->PageBoundaryCrossed())
+    {
+        cycles++;
+    }
+    return cycles;
+}
+
+

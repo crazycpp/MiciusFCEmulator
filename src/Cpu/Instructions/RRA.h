@@ -41,11 +41,9 @@ public:
         cpu.SetZN(sum & 0xFF);
     }
     
-    uint8_t Cycles() const override {
-        return addressingMode->Cycles() + 2; // ROR + ADC
-    }
-    
-    bool MayAddCycle() const override {
-        return addressingMode->PageBoundaryCrossed();
-    }
+    // 基本周期数
+    uint8_t Cycles() const override;
+
+protected:
+    // 实现具体的指令逻辑
 }; 

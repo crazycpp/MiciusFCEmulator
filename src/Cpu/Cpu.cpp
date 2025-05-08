@@ -276,7 +276,7 @@ void CPU::InitInstructionTable()
     instructionTable[0x84] = std::make_unique<STY>(addressingModes[AddressingMode::ZeroPage].get());
     instructionTable[0x94] = std::make_unique<STY>(addressingModes[AddressingMode::ZeroPageX].get());
     instructionTable[0x8C] = std::make_unique<STY>(addressingModes[AddressingMode::Absolute].get());
-    
+
     // Flag Instructions (All use Implied addressing)
     instructionTable[0x18] = std::make_unique<CLC>(addressingModes[AddressingMode::Implied].get());
     instructionTable[0xD8] = std::make_unique<CLD>(addressingModes[AddressingMode::Implied].get());
@@ -285,7 +285,7 @@ void CPU::InitInstructionTable()
     instructionTable[0x38] = std::make_unique<SEC>(addressingModes[AddressingMode::Implied].get());
     instructionTable[0xF8] = std::make_unique<SED>(addressingModes[AddressingMode::Implied].get());
     instructionTable[0x78] = std::make_unique<SEI>(addressingModes[AddressingMode::Implied].get());
-    
+
     // Transfer Instructions (All use Implied addressing)
     instructionTable[0xAA] = std::make_unique<TAX>(addressingModes[AddressingMode::Implied].get());
     instructionTable[0xA8] = std::make_unique<TAY>(addressingModes[AddressingMode::Implied].get());
@@ -324,9 +324,10 @@ void CPU::InitInstructionTable()
     instructionTable[0xE2] = std::make_unique<DOP>(addressingModes[AddressingMode::Immediate].get());
     instructionTable[0xF4] = std::make_unique<DOP>(addressingModes[AddressingMode::ZeroPageX].get());
 
+    
     // TOP - Triple NOP (非官方NOP变体，使用绝对寻址但不做任何事)
     instructionTable[0x0C] = std::make_unique<TOP>(addressingModes[AddressingMode::Absolute].get());
-    
+
     // TOP - Triple NOP with AbsoluteX addressing (非官方NOP变体，使用绝对X变址寻址)
     instructionTable[0x1C] = std::make_unique<TOP>(addressingModes[AddressingMode::AbsoluteX].get());
     instructionTable[0x3C] = std::make_unique<TOP>(addressingModes[AddressingMode::AbsoluteX].get());
@@ -334,9 +335,9 @@ void CPU::InitInstructionTable()
     instructionTable[0x7C] = std::make_unique<TOP>(addressingModes[AddressingMode::AbsoluteX].get());
     instructionTable[0xDC] = std::make_unique<TOP>(addressingModes[AddressingMode::AbsoluteX].get());
     instructionTable[0xFC] = std::make_unique<TOP>(addressingModes[AddressingMode::AbsoluteX].get());
-    
+
     // 非官方指令
-    
+
     // SLO - Shift Left then OR (ASL + ORA)
     instructionTable[0x03] = std::make_unique<SLO>(addressingModes[AddressingMode::IndirectX].get());
     instructionTable[0x07] = std::make_unique<SLO>(addressingModes[AddressingMode::ZeroPage].get());
@@ -345,7 +346,7 @@ void CPU::InitInstructionTable()
     instructionTable[0x17] = std::make_unique<SLO>(addressingModes[AddressingMode::ZeroPageX].get());
     instructionTable[0x1B] = std::make_unique<SLO>(addressingModes[AddressingMode::AbsoluteY].get());
     instructionTable[0x1F] = std::make_unique<SLO>(addressingModes[AddressingMode::AbsoluteX].get());
-    
+
     // RLA - Rotate Left then AND (ROL + AND)
     instructionTable[0x23] = std::make_unique<RLA>(addressingModes[AddressingMode::IndirectX].get());
     instructionTable[0x27] = std::make_unique<RLA>(addressingModes[AddressingMode::ZeroPage].get());
@@ -354,7 +355,7 @@ void CPU::InitInstructionTable()
     instructionTable[0x37] = std::make_unique<RLA>(addressingModes[AddressingMode::ZeroPageX].get());
     instructionTable[0x3B] = std::make_unique<RLA>(addressingModes[AddressingMode::AbsoluteY].get());
     instructionTable[0x3F] = std::make_unique<RLA>(addressingModes[AddressingMode::AbsoluteX].get());
-    
+
     // SRE - Shift Right then EOR (LSR + EOR)
     instructionTable[0x43] = std::make_unique<SRE>(addressingModes[AddressingMode::IndirectX].get());
     instructionTable[0x47] = std::make_unique<SRE>(addressingModes[AddressingMode::ZeroPage].get());
@@ -363,7 +364,7 @@ void CPU::InitInstructionTable()
     instructionTable[0x57] = std::make_unique<SRE>(addressingModes[AddressingMode::ZeroPageX].get());
     instructionTable[0x5B] = std::make_unique<SRE>(addressingModes[AddressingMode::AbsoluteY].get());
     instructionTable[0x5F] = std::make_unique<SRE>(addressingModes[AddressingMode::AbsoluteX].get());
-    
+
     // RRA - Rotate Right then Add with Carry (ROR + ADC)
     instructionTable[0x63] = std::make_unique<RRA>(addressingModes[AddressingMode::IndirectX].get());
     instructionTable[0x67] = std::make_unique<RRA>(addressingModes[AddressingMode::ZeroPage].get());
@@ -372,7 +373,7 @@ void CPU::InitInstructionTable()
     instructionTable[0x77] = std::make_unique<RRA>(addressingModes[AddressingMode::ZeroPageX].get());
     instructionTable[0x7B] = std::make_unique<RRA>(addressingModes[AddressingMode::AbsoluteY].get());
     instructionTable[0x7F] = std::make_unique<RRA>(addressingModes[AddressingMode::AbsoluteX].get());
-    
+
     // DCP - Decrement Memory then Compare (DEC + CMP)
     instructionTable[0xC3] = std::make_unique<DCP>(addressingModes[AddressingMode::IndirectX].get());
     instructionTable[0xC7] = std::make_unique<DCP>(addressingModes[AddressingMode::ZeroPage].get());
@@ -381,7 +382,7 @@ void CPU::InitInstructionTable()
     instructionTable[0xD7] = std::make_unique<DCP>(addressingModes[AddressingMode::ZeroPageX].get());
     instructionTable[0xDB] = std::make_unique<DCP>(addressingModes[AddressingMode::AbsoluteY].get());
     instructionTable[0xDF] = std::make_unique<DCP>(addressingModes[AddressingMode::AbsoluteX].get());
-    
+
     // ISB - Increment Memory then Subtract (INC + SBC)
     instructionTable[0xE3] = std::make_unique<ISB>(addressingModes[AddressingMode::IndirectX].get());
     instructionTable[0xE7] = std::make_unique<ISB>(addressingModes[AddressingMode::ZeroPage].get());
@@ -411,21 +412,14 @@ uint8_t CPU::Step()
 
     // 获取操作码
     uint8_t opcode = FetchByte();
-    
+
     // 获取并执行指令
     auto &instruction = instructionTable[opcode];
     instruction->Execute(*this);
-    
+
     // 获取基础周期数
     uint8_t cycleCount = instruction->Cycles();
-    
-    // 检查是否需要增加额外周期（对于某些寻址模式，跨页时需要额外+1周期）
-    // 注意：分支指令在自己的实现中已经添加了额外周期
-    if (instruction->MayAddCycle() && instruction->GetAddressingMode()->PageBoundaryCrossed())
-    {
-        cycleCount++;
-    }
-    
+
     cycles += cycleCount;
     return cycleCount;
 }
@@ -518,7 +512,7 @@ int CPU::GetInstructionLength(uint8_t opcode) const
         0x96, 0xB6,                                                             // 零页，Y
         0x90, 0xB0, 0xF0, 0x30, 0xD0, 0x10, 0x50, 0x70,                         // 分支指令
         0x04, 0x44, 0x54, 0x64, 0x74, 0xD4, 0xF4,                               // 非官方DOP (ZeroPage/ZeroPageX)
-        0x80, 0x82, 0x89, 0xC2, 0xE2                                           // 非官方DOP (Immediate)
+        0x80, 0x82, 0x89, 0xC2, 0xE2                                            // 非官方DOP (Immediate)
     };
 
     // 检查是1字节指令
@@ -582,43 +576,111 @@ std::string CPU::DisassembleInstruction(uint8_t opcode, uint8_t param1, uint8_t 
 
     // 获取指令助记符
     const char *mnemonic = mnemonics[opcode];
-    
+
     // 检查是否为非官方指令，如果是则添加*前缀
     bool isUnofficialOpcode = false;
-    switch (opcode) {
+    switch (opcode)
+    {
     // 非官方指令列表
     // SLO
-    case 0x03: case 0x07: case 0x0F: case 0x13: case 0x17: case 0x1B: case 0x1F:
+    case 0x03:
+    case 0x07:
+    case 0x0F:
+    case 0x13:
+    case 0x17:
+    case 0x1B:
+    case 0x1F:
     // RLA
-    case 0x23: case 0x27: case 0x2F: case 0x33: case 0x37: case 0x3B: case 0x3F:
+    case 0x23:
+    case 0x27:
+    case 0x2F:
+    case 0x33:
+    case 0x37:
+    case 0x3B:
+    case 0x3F:
     // SRE
-    case 0x43: case 0x47: case 0x4F: case 0x53: case 0x57: case 0x5B: case 0x5F:
+    case 0x43:
+    case 0x47:
+    case 0x4F:
+    case 0x53:
+    case 0x57:
+    case 0x5B:
+    case 0x5F:
     // RRA
-    case 0x63: case 0x67: case 0x6F: case 0x73: case 0x77: case 0x7B: case 0x7F:
+    case 0x63:
+    case 0x67:
+    case 0x6F:
+    case 0x73:
+    case 0x77:
+    case 0x7B:
+    case 0x7F:
     // SAX
-    case 0x83: case 0x87: case 0x8F: case 0x97:
+    case 0x83:
+    case 0x87:
+    case 0x8F:
+    case 0x97:
     // LAX
-    case 0xA3: case 0xA7: case 0xAF: case 0xB3: case 0xB7: case 0xBF:
+    case 0xA3:
+    case 0xA7:
+    case 0xAF:
+    case 0xB3:
+    case 0xB7:
+    case 0xBF:
     // DCP
-    case 0xC3: case 0xC7: case 0xCF: case 0xD3: case 0xD7: case 0xDB: case 0xDF:
+    case 0xC3:
+    case 0xC7:
+    case 0xCF:
+    case 0xD3:
+    case 0xD7:
+    case 0xDB:
+    case 0xDF:
     // ISB
-    case 0xE3: case 0xE7: case 0xEF: case 0xF3: case 0xF7: case 0xFB: case 0xFF:
+    case 0xE3:
+    case 0xE7:
+    case 0xEF:
+    case 0xF3:
+    case 0xF7:
+    case 0xFB:
+    case 0xFF:
     // DOP (非官方NOP变体)
-    case 0x04: case 0x14: case 0x34: case 0x44: case 0x54: case 0x64: case 0x74:
-    case 0x80: case 0x82: case 0x89: case 0xC2: case 0xD4: case 0xE2: case 0xF4:
+    case 0x04:
+    case 0x14:
+    case 0x34:
+    case 0x44:
+    case 0x54:
+    case 0x64:
+    case 0x74:
+    case 0x80:
+    case 0x82:
+    case 0x89:
+    case 0xC2:
+    case 0xD4:
+    case 0xE2:
+    case 0xF4:
     // TOP (非官方NOP变体，绝对寻址)
     case 0x0C:
     // TOP - Triple NOP with AbsoluteX addressing (非官方NOP变体，使用绝对X变址寻址)
-    case 0x1C: case 0x3C: case 0x5C: case 0x7C: case 0xDC: case 0xFC:
+    case 0x1C:
+    case 0x3C:
+    case 0x5C:
+    case 0x7C:
+    case 0xDC:
+    case 0xFC:
     // 非官方SBC变体
     case 0xEB:
     // 非官方NOP变体 (隐含寻址)
-    case 0x1A: case 0x3A: case 0x5A: case 0x7A: case 0xDA: case 0xFA:
+    case 0x1A:
+    case 0x3A:
+    case 0x5A:
+    case 0x7A:
+    case 0xDA:
+    case 0xFA:
         isUnofficialOpcode = true;
         break;
     }
-    
-    if (isUnofficialOpcode) {
+
+    if (isUnofficialOpcode)
+    {
         result = "*";
     }
     result += mnemonic;
@@ -636,9 +698,14 @@ std::string CPU::DisassembleInstruction(uint8_t opcode, uint8_t param1, uint8_t 
         result += buf;
     }
     break;
-    
+
     // TOP指令 - 非官方带绝对X变址寻址的NOP
-    case 0x1C: case 0x3C: case 0x5C: case 0x7C: case 0xDC: case 0xFC: // AbsoluteX
+    case 0x1C:
+    case 0x3C:
+    case 0x5C:
+    case 0x7C:
+    case 0xDC:
+    case 0xFC: // AbsoluteX
     {
         char buf[32];
         uint16_t baseAddr = param1 | (param2 << 8);
@@ -648,23 +715,40 @@ std::string CPU::DisassembleInstruction(uint8_t opcode, uint8_t param1, uint8_t 
         result += buf;
     }
     break;
-    
+
     // DOP指令 (非官方NOP变体)
-    case 0x04: case 0x14: case 0x34: case 0x44: case 0x54: case 0x64: case 0x74: // ZeroPage
-    case 0x80: case 0x82: case 0x89: case 0xC2: case 0xD4: case 0xE2: case 0xF4: // Immediate
+    case 0x04:
+    case 0x14:
+    case 0x34:
+    case 0x44:
+    case 0x54:
+    case 0x64:
+    case 0x74: // ZeroPage
+    case 0x80:
+    case 0x82:
+    case 0x89:
+    case 0xC2:
+    case 0xD4:
+    case 0xE2:
+    case 0xF4: // Immediate
     {
         char buf[32];
-        if (opcode == 0x14 || opcode == 0x34 || opcode == 0x54 || 
-            opcode == 0x74 || opcode == 0xD4 || opcode == 0xF4) {
+        if (opcode == 0x14 || opcode == 0x34 || opcode == 0x54 ||
+            opcode == 0x74 || opcode == 0xD4 || opcode == 0xF4)
+        {
             // ZeroPageX寻址
             uint16_t effectiveAddr = (param1 + registers.X) & 0xFF; // 计算有效地址（带X寄存器偏移）
             uint8_t memValue = memory.Read(effectiveAddr);
             snprintf(buf, sizeof(buf), " $%02X,X @ %02X = %02X", param1, effectiveAddr, memValue);
-        } else if (opcode == 0x04 || opcode == 0x44 || opcode == 0x64) {
+        }
+        else if (opcode == 0x04 || opcode == 0x44 || opcode == 0x64)
+        {
             // ZeroPage寻址
             uint8_t memValue = memory.Read(param1);
             snprintf(buf, sizeof(buf), " $%02X = %02X", param1, memValue);
-        } else {
+        }
+        else
+        {
             // Immediate寻址
             snprintf(buf, sizeof(buf), " #$%02X", param1);
         }
@@ -673,23 +757,35 @@ std::string CPU::DisassembleInstruction(uint8_t opcode, uint8_t param1, uint8_t 
     break;
 
     // SLO指令 (非官方)
-    case 0x07: case 0x17: case 0x0F: case 0x1F: case 0x1B: case 0x03: case 0x13:
+    case 0x07:
+    case 0x17:
+    case 0x0F:
+    case 0x1F:
+    case 0x1B:
+    case 0x03:
+    case 0x13:
     {
         char buf[32];
-        if (opcode == 0x07 || opcode == 0x17) { // ZeroPage
+        if (opcode == 0x07 || opcode == 0x17)
+        { // ZeroPage
             uint8_t memValue = memory.Read(param1);
             snprintf(buf, sizeof(buf), " $%02X = %02X", param1, memValue);
-        } else if (opcode == 0x0F || opcode == 0x1F) { // Absolute
+        }
+        else if (opcode == 0x0F || opcode == 0x1F)
+        { // Absolute
             uint8_t memValue = memory.Read(param1 | (param2 << 8));
             snprintf(buf, sizeof(buf), " $%04X = %02X", param1 | (param2 << 8), memValue);
-        } else if (opcode == 0x1B) { // Absolute,Y
+        }
+        else if (opcode == 0x1B)
+        { // Absolute,Y
             uint8_t memValue = memory.Read((param1 | (param2 << 8)) + registers.Y);
             snprintf(buf, sizeof(buf), " $%04X,Y @ %04X = %02X", param1 | (param2 << 8), (param1 | (param2 << 8)) + registers.Y, memValue);
-        } else if (opcode == 0x03 || opcode == 0x13) { // (Indirect,X) or (Indirect),Y
-            uint16_t addr = (opcode == 0x03) ? 
-                memory.Read((param1 + registers.X) & 0xFF) | (memory.Read((param1 + registers.X + 1) & 0xFF) << 8) :
-                memory.Read(param1) | (memory.Read((param1 + 1) & 0xFF) << 8);
-            if (opcode == 0x13) addr += registers.Y;
+        }
+        else if (opcode == 0x03 || opcode == 0x13)
+        { // (Indirect,X) or (Indirect),Y
+            uint16_t addr = (opcode == 0x03) ? memory.Read((param1 + registers.X) & 0xFF) | (memory.Read((param1 + registers.X + 1) & 0xFF) << 8) : memory.Read(param1) | (memory.Read((param1 + 1) & 0xFF) << 8);
+            if (opcode == 0x13)
+                addr += registers.Y;
             uint8_t memValue = memory.Read(addr);
             snprintf(buf, sizeof(buf), " (%02X),%c @ %04X = %02X", param1, (opcode == 0x03) ? 'X' : 'Y', addr, memValue);
         }
@@ -731,9 +827,18 @@ std::string CPU::DisassembleInstruction(uint8_t opcode, uint8_t param1, uint8_t 
     break;
 
     // 立即寻址指令 (#$xx)
-    case 0x69: case 0x29: case 0x09: case 0x49: // ADC, AND, ORA, EOR
-    case 0xA9: case 0xA0: case 0xA2: case 0xC9: // LDA, LDY, LDX, CMP
-    case 0xE0: case 0xC0: case 0xE9: case 0xEB: // CPX, CPY, SBC, SBC (非官方)
+    case 0x69:
+    case 0x29:
+    case 0x09:
+    case 0x49: // ADC, AND, ORA, EOR
+    case 0xA9:
+    case 0xA0:
+    case 0xA2:
+    case 0xC9: // LDA, LDY, LDX, CMP
+    case 0xE0:
+    case 0xC0:
+    case 0xE9:
+    case 0xEB: // CPX, CPY, SBC, SBC (非官方)
     {
         char buf[32];
         snprintf(buf, sizeof(buf), " #$%02X", param1);
@@ -742,12 +847,27 @@ std::string CPU::DisassembleInstruction(uint8_t opcode, uint8_t param1, uint8_t 
     break;
 
     // 零页寻址指令 ($xx)
-    case 0x65: case 0x25: case 0x05: case 0x24: // ADC, AND, ORA, BIT
-    case 0x45: case 0x06: case 0x46: case 0xA5: // EOR, ASL, LSR, LDA
-    case 0xA6: case 0xA4: case 0xC5: case 0xC4: // LDX, LDY, CMP, CPY
-    case 0xE4: case 0xC6: case 0xE6: case 0xE5: // CPX, DEC, INC, SBC
-    case 0x85: case 0x86: case 0x84: case 0x26: // STA, STX, STY, ROL
-    case 0x66:                                  // ROR
+    case 0x65:
+    case 0x25:
+    case 0x05:
+    case 0x24: // ADC, AND, ORA, BIT
+    case 0x45:
+    case 0x06:
+    case 0x46:
+    case 0xA5: // EOR, ASL, LSR, LDA
+    case 0xA6:
+    case 0xA4:
+    case 0xC5:
+    case 0xC4: // LDX, LDY, CMP, CPY
+    case 0xE4:
+    case 0xC6:
+    case 0xE6:
+    case 0xE5: // CPX, DEC, INC, SBC
+    case 0x85:
+    case 0x86:
+    case 0x84:
+    case 0x26: // STA, STX, STY, ROL
+    case 0x66: // ROR
     {
         char buf[32];
         uint8_t memValue = memory.Read(param1);
@@ -757,10 +877,22 @@ std::string CPU::DisassembleInstruction(uint8_t opcode, uint8_t param1, uint8_t 
     break;
 
     // 零页X变址指令 ($xx,X)
-    case 0x75: case 0x35: case 0x15: case 0x55: // ADC, AND, ORA, EOR
-    case 0x16: case 0x56: case 0xB5: case 0xB4: // ASL, LSR, LDA, LDY
-    case 0xD5: case 0xD6: case 0xF6: case 0xF5: // CMP, DEC, INC, SBC
-    case 0x95: case 0x94: case 0x36: case 0x76: // STA, STY, ROL, ROR
+    case 0x75:
+    case 0x35:
+    case 0x15:
+    case 0x55: // ADC, AND, ORA, EOR
+    case 0x16:
+    case 0x56:
+    case 0xB5:
+    case 0xB4: // ASL, LSR, LDA, LDY
+    case 0xD5:
+    case 0xD6:
+    case 0xF6:
+    case 0xF5: // CMP, DEC, INC, SBC
+    case 0x95:
+    case 0x94:
+    case 0x36:
+    case 0x76: // STA, STY, ROL, ROR
     {
         char buf[32];
         uint8_t effectiveAddr = (param1 + registers.X) & 0xFF;
@@ -771,7 +903,8 @@ std::string CPU::DisassembleInstruction(uint8_t opcode, uint8_t param1, uint8_t 
     break;
 
     // 零页Y变址指令 ($xx,Y)
-    case 0xB6: case 0x96:                      // LDX, STX
+    case 0xB6:
+    case 0x96: // LDX, STX
     {
         char buf[32];
         uint8_t effectiveAddr = (param1 + registers.Y) & 0xFF;
@@ -782,12 +915,27 @@ std::string CPU::DisassembleInstruction(uint8_t opcode, uint8_t param1, uint8_t 
     break;
 
     // 绝对寻址指令 ($xxxx)
-    case 0x6D: case 0x2D: case 0x0D: case 0x2C: // ADC, AND, ORA, BIT
-    case 0x4D: case 0x0E: case 0x4E: case 0xAD: // EOR, ASL, LSR, LDA
-    case 0xAE: case 0xAC: case 0xCD: case 0xCC: // LDX, LDY, CMP, CPY
-    case 0xEC: case 0xCE: case 0xEE: case 0xED: // CPX, DEC, INC, SBC
-    case 0x8D: case 0x8E: case 0x8C: case 0x2E: // STA, STX, STY, ROL
-    case 0x6E:                                  // ROR
+    case 0x6D:
+    case 0x2D:
+    case 0x0D:
+    case 0x2C: // ADC, AND, ORA, BIT
+    case 0x4D:
+    case 0x0E:
+    case 0x4E:
+    case 0xAD: // EOR, ASL, LSR, LDA
+    case 0xAE:
+    case 0xAC:
+    case 0xCD:
+    case 0xCC: // LDX, LDY, CMP, CPY
+    case 0xEC:
+    case 0xCE:
+    case 0xEE:
+    case 0xED: // CPX, DEC, INC, SBC
+    case 0x8D:
+    case 0x8E:
+    case 0x8C:
+    case 0x2E: // STA, STX, STY, ROL
+    case 0x6E: // ROR
     {
         char buf[32];
         uint16_t addr = param1 | (param2 << 8);
@@ -798,10 +946,21 @@ std::string CPU::DisassembleInstruction(uint8_t opcode, uint8_t param1, uint8_t 
     break;
 
     // 绝对X变址指令 ($xxxx,X)
-    case 0x7D: case 0x3D: case 0x1D: case 0x5D: // ADC, AND, ORA, EOR
-    case 0x1E: case 0x5E: case 0xBD: case 0xBC: // ASL, LSR, LDA, LDY
-    case 0xDD: case 0xDE: case 0xFE: case 0xFD: // CMP, DEC, INC, SBC
-    case 0x9D: case 0x3E: case 0x7E:            // STA, ROL, ROR
+    case 0x7D:
+    case 0x3D:
+    case 0x1D:
+    case 0x5D: // ADC, AND, ORA, EOR
+    case 0x1E:
+    case 0x5E:
+    case 0xBD:
+    case 0xBC: // ASL, LSR, LDA, LDY
+    case 0xDD:
+    case 0xDE:
+    case 0xFE:
+    case 0xFD: // CMP, DEC, INC, SBC
+    case 0x9D:
+    case 0x3E:
+    case 0x7E: // STA, ROL, ROR
     {
         char buf[32];
         uint16_t baseAddr = param1 | (param2 << 8);
@@ -813,9 +972,15 @@ std::string CPU::DisassembleInstruction(uint8_t opcode, uint8_t param1, uint8_t 
     break;
 
     // 绝对Y变址指令 ($xxxx,Y)
-    case 0x79: case 0x39: case 0x19: case 0x59: // ADC, AND, ORA, EOR
-    case 0xB9: case 0xBE: case 0xD9: case 0xF9: // LDA, LDX, CMP, SBC
-    case 0x99:                                  // STA
+    case 0x79:
+    case 0x39:
+    case 0x19:
+    case 0x59: // ADC, AND, ORA, EOR
+    case 0xB9:
+    case 0xBE:
+    case 0xD9:
+    case 0xF9: // LDA, LDX, CMP, SBC
+    case 0x99: // STA
     {
         char buf[32];
         uint16_t baseAddr = param1 | (param2 << 8);
@@ -827,8 +992,14 @@ std::string CPU::DisassembleInstruction(uint8_t opcode, uint8_t param1, uint8_t 
     break;
 
     // 间接X变址指令 (($xx,X))
-    case 0x61: case 0x21: case 0x01: case 0x41: // ADC, AND, ORA, EOR
-    case 0xA1: case 0xC1: case 0xE1: case 0x81: // LDA, CMP, SBC, STA
+    case 0x61:
+    case 0x21:
+    case 0x01:
+    case 0x41: // ADC, AND, ORA, EOR
+    case 0xA1:
+    case 0xC1:
+    case 0xE1:
+    case 0x81: // LDA, CMP, SBC, STA
     {
         char buf[32];
         uint8_t zeroPageAddr = (param1 + registers.X) & 0xFF;
@@ -840,8 +1011,14 @@ std::string CPU::DisassembleInstruction(uint8_t opcode, uint8_t param1, uint8_t 
     break;
 
     // 间接Y变址指令 (($xx),Y)
-    case 0x71: case 0x31: case 0x11: case 0x51: // ADC, AND, ORA, EOR
-    case 0xB1: case 0xD1: case 0xF1: case 0x91: // LDA, CMP, SBC, STA
+    case 0x71:
+    case 0x31:
+    case 0x11:
+    case 0x51: // ADC, AND, ORA, EOR
+    case 0xB1:
+    case 0xD1:
+    case 0xF1:
+    case 0x91: // LDA, CMP, SBC, STA
     {
         char buf[32];
         uint16_t indirectAddr = memory.Read(param1) | (memory.Read((param1 + 1) & 0xFF) << 8);
@@ -873,18 +1050,44 @@ std::string CPU::DisassembleInstruction(uint8_t opcode, uint8_t param1, uint8_t 
     break;
 
     // 隐含寻址指令不需要参数
-    case 0xAA: case 0xA8: case 0xBA: case 0x8A: // TAX, TAY, TSX, TXA
-    case 0x9A: case 0x98: case 0xE8: case 0xC8: // TXS, TYA, INX, INY
-    case 0xCA: case 0x88: case 0x18: case 0xD8: // DEX, DEY, CLC, CLD
-    case 0x58: case 0xB8: case 0x38: case 0xF8: // CLI, CLV, SEC, SED
-    case 0x78: case 0x40: case 0x60: case 0x00: // SEI, RTI, RTS, BRK
-    case 0xEA: case 0x48: case 0x08: case 0x68: // NOP, PHA, PHP, PLA
-    case 0x28: case 0x1A: case 0x3A: case 0x5A: // PLP, NOP(非官方), NOP(非官方), NOP(非官方)
-    case 0x7A: case 0xDA: case 0xFA:            // NOP(非官方), NOP(非官方), NOP(非官方)
+    case 0xAA:
+    case 0xA8:
+    case 0xBA:
+    case 0x8A: // TAX, TAY, TSX, TXA
+    case 0x9A:
+    case 0x98:
+    case 0xE8:
+    case 0xC8: // TXS, TYA, INX, INY
+    case 0xCA:
+    case 0x88:
+    case 0x18:
+    case 0xD8: // DEX, DEY, CLC, CLD
+    case 0x58:
+    case 0xB8:
+    case 0x38:
+    case 0xF8: // CLI, CLV, SEC, SED
+    case 0x78:
+    case 0x40:
+    case 0x60:
+    case 0x00: // SEI, RTI, RTS, BRK
+    case 0xEA:
+    case 0x48:
+    case 0x08:
+    case 0x68: // NOP, PHA, PHP, PLA
+    case 0x28:
+    case 0x1A:
+    case 0x3A:
+    case 0x5A: // PLP, NOP(非官方), NOP(非官方), NOP(非官方)
+    case 0x7A:
+    case 0xDA:
+    case 0xFA: // NOP(非官方), NOP(非官方), NOP(非官方)
         break; // 不添加任何参数
-    
+
     // 累加器寻址指令
-    case 0x0A: case 0x2A: case 0x4A: case 0x6A: // ASL A, ROL A, LSR A, ROR A
+    case 0x0A:
+    case 0x2A:
+    case 0x4A:
+    case 0x6A: // ASL A, ROL A, LSR A, ROR A
         result += " A";
         break;
 

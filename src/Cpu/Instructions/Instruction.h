@@ -20,8 +20,6 @@ public:
     // 获取指令周期数
     virtual uint8_t Cycles() const = 0;
     
-    // 检查是否可能需要额外周期(跨页)
-    virtual bool MayAddCycle() const { return false; }
     
     // 获取持有的寻址模式
     AddressingMode* GetAddressingMode() const { return addressingMode; }

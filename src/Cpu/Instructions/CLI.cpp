@@ -1,6 +1,7 @@
 #include "CLI.h"
 #include "../Cpu.h"
 
-void CLI::ExecuteImpl(CPU& cpu) {
+void CLI::ExecuteImpl(CPU &cpu)
+{
     cpu.SetInterruptDisableFlag(false);
-} 
+}

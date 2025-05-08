@@ -21,11 +21,8 @@ public:
         ExecuteImpl(cpu);
     }
     
-    // 默认返回2个周期
-    uint8_t Cycles() const override { return 2; }
-    
-    // 隐含寻址指令不会有跨页问题
-    bool MayAddCycle() const override { return false; }
+    // 计算指令周期数
+    uint8_t Cycles() const override;
     
 protected:
     // 子类实现具体指令逻辑

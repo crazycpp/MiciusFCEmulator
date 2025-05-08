@@ -9,10 +9,7 @@ public:
     using AddressedInstruction::AddressedInstruction;
     
     // 基本周期数
-    uint8_t Cycles() const override { return 2; }
-    
-    // 某些寻址模式可能额外+1周期
-    bool MayAddCycle() const override { return true; }
+    uint8_t Cycles() const override;
     
 protected:
     // 实现具体的指令逻辑

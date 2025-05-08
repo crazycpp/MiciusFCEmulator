@@ -1,14 +1,19 @@
-#include "LDY.h"
+#include "LAX.h"
 #include "../Cpu.h"
 
-void LDY::ExecuteWithAddress(CPU &cpu, uint16_t addr)
+void LAX::ExecuteWithAddress(CPU &cpu, uint16_t addr)
 {
     uint8_t value = cpu.ReadByte(addr);
-    cpu.SetY(value);
+
+    // Set both A and X to the same value
+    cpu.SetA(value);
+    cpu.SetX(value);
+
+    // Set zero and negative flags based on the loaded value
     cpu.SetZN(value);
 }
 
-uint8_t LDY::Cycles() const
+uint8_t LAX::Cycles() const
 {
     uint8_t cycles = 0;
     switch (addressingMode->GetType())
@@ -28,6 +33,15 @@ uint8_t LDY::Cycles() const
     case AddressingMode::AbsoluteX:
         cycles = 4;
         break;
+    case AddressingMode::AbsoluteY:
+        cycles = 4;
+        break;
+    case AddressingMode::IndirectX:
+        cycles = 6;
+        break;
+    case AddressingMode::IndirectY:
+        cycles = 5;
+        break;
     }
     if (addressingMode->PageBoundaryCrossed())
     {
@@ -35,4 +49,3 @@ uint8_t LDY::Cycles() const
     }
     return cycles;
 }
-

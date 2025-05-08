@@ -14,11 +14,8 @@ public:
         cpu.ReadByte(addr);
     }
     
-    uint8_t Cycles() const override {
-        return addressingMode->Cycles();
-    }
-    
-    bool MayAddCycle() const override {
-        return addressingMode->PageBoundaryCrossed();
-    }
+    uint8_t Cycles() const override;
+
+protected:
+    // 实现具体的指令逻辑
 }; 

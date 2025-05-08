@@ -1,6 +1,7 @@
 #include "SED.h"
 #include "../Cpu.h"
 
-void SED::ExecuteImpl(CPU& cpu) {
+void SED::ExecuteImpl(CPU &cpu)
+{
     cpu.SetDecimalModeFlag(true);
-} 
+}

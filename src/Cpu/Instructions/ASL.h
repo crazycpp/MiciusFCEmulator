@@ -8,10 +8,7 @@ public:
     using AccumulatorInstruction::AccumulatorInstruction;
     
     // 基本周期数
-    uint8_t Cycles() const override { return 2; }
-    
-    // 某些寻址模式可能额外+1周期
-    bool MayAddCycle() const override { return true; }
+    uint8_t Cycles() const override;
     
 protected:
     // 对累加器执行
