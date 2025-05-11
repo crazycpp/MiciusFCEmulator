@@ -14,6 +14,8 @@
 #include "AddressingModes/Relative.h"
 #include "AddressingModes/Accumulator.h"
 #include <memory>
+#include <iostream>
+#include <iomanip>
 
 CPU::CPU(Memory &memory) : memory(memory), cycles(0), nmiPending(false), irqPending(false)
 {
@@ -415,12 +417,18 @@ uint8_t CPU::Step()
 
     // 获取并执行指令
     auto &instruction = instructionTable[opcode];
-    instruction->Execute(*this);
 
+        // 执行指令
+    instruction->Execute(*this);
+    
     // 获取基础周期数
     uint8_t cycleCount = instruction->Cycles();
-
+    
+    // 在执行指令前累加cycles
     cycles += cycleCount;
+    
+
+
     return cycleCount;
 }
 
@@ -436,56 +444,54 @@ void CPU::TriggerIRQ()
 
 void CPU::DumpState() const
 {
+    // 使用默认的标准输出
+    DumpState(std::cout);
+}
+
+void CPU::DumpState(std::ostream& out) const
+{
+    using std::setw; using std::setfill; using std::left; using std::right; using std::hex; using std::dec; using std::uppercase;
     // 获取当前指令
     uint8_t opcode = memory.Read(registers.PC);
-    uint8_t param1 = 0;
-    uint8_t param2 = 0;
+    uint8_t param1 = (registers.PC + 1 <= 0xFFFF) ? memory.Read(registers.PC + 1) : 0;
+    uint8_t param2 = (registers.PC + 2 <= 0xFFFF) ? memory.Read(registers.PC + 2) : 0;
 
-    // 读取参数
-    if (registers.PC + 1 <= 0xFFFF)
-    {
-        param1 = memory.Read(registers.PC + 1);
-    }
+    // PC
+    out << uppercase << hex << setfill('0') << setw(4) << (int)registers.PC << "  ";
 
-    if (registers.PC + 2 <= 0xFFFF)
-    {
-        param2 = memory.Read(registers.PC + 2);
-    }
-
-    // 打印PC和操作码字节 - 注意格式与nestest.log完全一致
-    printf("%04X  ", registers.PC);
-
+    // 机器码（根据nestest.log格式调整）
     int instrLen = GetInstructionLength(opcode);
     if (instrLen == 1)
-    {
-        printf("%02X       ", opcode);
-    }
+        out << setw(2) << (int)opcode << "        ";
     else if (instrLen == 2)
-    {
-        printf("%02X %02X    ", opcode, param1);
-    }
+        out << setw(2) << (int)opcode << " " << setw(2) << (int)param1 << "     ";
     else
-    {
-        printf("%02X %02X %02X ", opcode, param1, param2);
-    }
+        out << setw(2) << (int)opcode << " " << setw(2) << (int)param1 << " " << setw(2) << (int)param2 << "  ";
 
-    // 反汇编指令
+    // 汇编指令（内容，后补空格到25格）
     std::string asmStr = DisassembleInstruction(opcode, param1, param2);
-
-    // 打印指令，保持适当的间距 - 确保与nestest.log格式一致
-    // nestest.log格式在指令后面有固定数量的空格，然后是寄存器状态
-    printf("%-31s", asmStr.c_str());
+    out << asmStr;
+    int asmLen = (int)asmStr.length();
+    for (int i = asmLen; i < 25; ++i) out << ' ';
 
     // 计算PPU周期 (每个CPU周期 = 3个PPU周期)
     int ppuCycle = ((int)cycles * 3) % 341;
     int ppuScanline = ((int)cycles * 3) / 341;
 
-    // 打印寄存器状态和周期，格式与nestest.log完全一致
-    printf("A:%02X X:%02X Y:%02X P:%02X SP:%02X PPU:%3d,%3d CYC:%d",
-           registers.A, registers.X, registers.Y, registers.P, registers.SP,
-           ppuScanline, ppuCycle, (int)cycles);
+    // 状态 - 使用十六进制
+    out << right << hex << setfill('0')
+        << "A:" << setw(2) << (int)registers.A << " "
+        << "X:" << setw(2) << (int)registers.X << " "
+        << "Y:" << setw(2) << (int)registers.Y << " "
+        << "P:" << setw(2) << (int)registers.P << " "
+        << "SP:" << setw(2) << (int)registers.SP << " ";
 
-    printf("\n");
+    // PPU - 使用十进制
+    out << "PPU:" << dec << setfill(' ') << setw(3) << ppuScanline << "," << setw(3) << ppuCycle << " ";
+    
+    // CYC - 使用十进制
+    out << "CYC:" << dec << (int)cycles;
+    out << std::endl;
 }
 
 // 获取指令长度
@@ -512,7 +518,8 @@ int CPU::GetInstructionLength(uint8_t opcode) const
         0x96, 0xB6,                                                             // 零页，Y
         0x90, 0xB0, 0xF0, 0x30, 0xD0, 0x10, 0x50, 0x70,                         // 分支指令
         0x04, 0x44, 0x54, 0x64, 0x74, 0xD4, 0xF4,                               // 非官方DOP (ZeroPage/ZeroPageX)
-        0x80, 0x82, 0x89, 0xC2, 0xE2                                            // 非官方DOP (Immediate)
+        0x80, 0x82, 0x89, 0xC2, 0xE2,                                           // 非官方DOP (Immediate)
+        0xA1, 0xB1, 0x01, 0x11, 0x21, 0x31, 0x41, 0x51, 0x61, 0x71, 0x81, 0x91  // 间接X和间接Y寻址
     };
 
     // 检查是1字节指令
@@ -533,11 +540,17 @@ int CPU::GetInstructionLength(uint8_t opcode) const
     return 3;
 }
 
+// 检查是否为I/O寄存器地址，这些地址在nestest.log中显示为FF
+bool IsIORegister(uint16_t addr) {
+    // APU和I/O寄存器范围 $4000-$401F
+    return (addr >= 0x4000 && addr <= 0x401F);
+}
+
 // 反汇编指令
 std::string CPU::DisassembleInstruction(uint8_t opcode, uint8_t param1, uint8_t param2) const
 {
-    std::string result;
-
+    std::string result = " "; // Add initial space for alignment
+    
     // 指令助记符表
     static const char *mnemonics[] = {
         "BRK", "ORA", "???", "SLO", "NOP", "ORA", "ASL", "SLO", // 0x00-0x07
@@ -681,7 +694,7 @@ std::string CPU::DisassembleInstruction(uint8_t opcode, uint8_t param1, uint8_t 
 
     if (isUnofficialOpcode)
     {
-        result = "*";
+        result += "*";
     }
     result += mnemonic;
 
@@ -870,6 +883,7 @@ std::string CPU::DisassembleInstruction(uint8_t opcode, uint8_t param1, uint8_t 
     case 0x66: // ROR
     {
         char buf[32];
+        // 零页地址不会是I/O寄存器地址（$4000-$401F）
         uint8_t memValue = memory.Read(param1);
         snprintf(buf, sizeof(buf), " $%02X = %02X", param1, memValue);
         result += buf;
@@ -896,6 +910,7 @@ std::string CPU::DisassembleInstruction(uint8_t opcode, uint8_t param1, uint8_t 
     {
         char buf[32];
         uint8_t effectiveAddr = (param1 + registers.X) & 0xFF;
+        // 零页地址不会是I/O寄存器地址（$4000-$401F）
         uint8_t memValue = memory.Read(effectiveAddr);
         snprintf(buf, sizeof(buf), " $%02X,X @ %02X = %02X", param1, effectiveAddr, memValue);
         result += buf;
@@ -908,6 +923,7 @@ std::string CPU::DisassembleInstruction(uint8_t opcode, uint8_t param1, uint8_t 
     {
         char buf[32];
         uint8_t effectiveAddr = (param1 + registers.Y) & 0xFF;
+        // 零页地址不会是I/O寄存器地址（$4000-$401F）
         uint8_t memValue = memory.Read(effectiveAddr);
         snprintf(buf, sizeof(buf), " $%02X,Y @ %02X = %02X", param1, effectiveAddr, memValue);
         result += buf;
@@ -939,8 +955,14 @@ std::string CPU::DisassembleInstruction(uint8_t opcode, uint8_t param1, uint8_t 
     {
         char buf[32];
         uint16_t addr = param1 | (param2 << 8);
-        uint8_t memValue = memory.Read(addr);
-        snprintf(buf, sizeof(buf), " $%04X = %02X", addr, memValue);
+        // 对于I/O寄存器地址，显示FF而不是实际值
+        if ((opcode == 0x8D || opcode == 0x8E || opcode == 0x8C) && IsIORegister(addr))
+            snprintf(buf, sizeof(buf), " $%04X = FF", addr);
+        else
+        {
+            uint8_t memValue = memory.Read(addr);
+            snprintf(buf, sizeof(buf), " $%04X = %02X", addr, memValue);
+        }
         result += buf;
     }
     break;
@@ -965,8 +987,14 @@ std::string CPU::DisassembleInstruction(uint8_t opcode, uint8_t param1, uint8_t 
         char buf[32];
         uint16_t baseAddr = param1 | (param2 << 8);
         uint16_t effectiveAddr = baseAddr + registers.X;
-        uint8_t memValue = memory.Read(effectiveAddr);
-        snprintf(buf, sizeof(buf), " $%04X,X @ %04X = %02X", baseAddr, effectiveAddr, memValue);
+        // 对于I/O寄存器地址，显示FF而不是实际值
+        if (opcode == 0x9D && IsIORegister(effectiveAddr))
+            snprintf(buf, sizeof(buf), " $%04X,X @ %04X = FF", baseAddr, effectiveAddr);
+        else
+        {
+            uint8_t memValue = memory.Read(effectiveAddr);
+            snprintf(buf, sizeof(buf), " $%04X,X @ %04X = %02X", baseAddr, effectiveAddr, memValue);
+        }
         result += buf;
     }
     break;
@@ -985,17 +1013,23 @@ std::string CPU::DisassembleInstruction(uint8_t opcode, uint8_t param1, uint8_t 
         char buf[32];
         uint16_t baseAddr = param1 | (param2 << 8);
         uint16_t effectiveAddr = baseAddr + registers.Y;
-        uint8_t memValue = memory.Read(effectiveAddr);
-        snprintf(buf, sizeof(buf), " $%04X,Y @ %04X = %02X", baseAddr, effectiveAddr, memValue);
+        // 对于I/O寄存器地址，显示FF而不是实际值
+        if (opcode == 0x99 && IsIORegister(effectiveAddr))
+            snprintf(buf, sizeof(buf), " $%04X,Y @ %04X = FF", baseAddr, effectiveAddr);
+        else
+        {
+            uint8_t memValue = memory.Read(effectiveAddr);
+            snprintf(buf, sizeof(buf), " $%04X,Y @ %04X = %02X", baseAddr, effectiveAddr, memValue);
+        }
         result += buf;
     }
     break;
 
     // 间接X变址指令 (($xx,X))
-    case 0x61:
-    case 0x21:
     case 0x01:
-    case 0x41: // ADC, AND, ORA, EOR
+    case 0x21:
+    case 0x41:
+    case 0x61: // ORA, AND, EOR, ADC
     case 0xA1:
     case 0xC1:
     case 0xE1:
@@ -1004,17 +1038,23 @@ std::string CPU::DisassembleInstruction(uint8_t opcode, uint8_t param1, uint8_t 
         char buf[32];
         uint8_t zeroPageAddr = (param1 + registers.X) & 0xFF;
         uint16_t effectiveAddr = memory.Read(zeroPageAddr) | (memory.Read((zeroPageAddr + 1) & 0xFF) << 8);
-        uint8_t memValue = memory.Read(effectiveAddr);
-        snprintf(buf, sizeof(buf), " ($%02X,X) @ %02X = %04X = %02X", param1, zeroPageAddr, effectiveAddr, memValue);
+        // 对于I/O寄存器地址，显示FF而不是实际值
+        if (opcode == 0x81 && IsIORegister(effectiveAddr))
+            snprintf(buf, sizeof(buf), " ($%02X,X) @ %02X = %04X = FF", param1, zeroPageAddr, effectiveAddr);
+        else
+        {
+            uint8_t memValue = memory.Read(effectiveAddr);
+            snprintf(buf, sizeof(buf), " ($%02X,X) @ %02X = %04X = %02X", param1, zeroPageAddr, effectiveAddr, memValue);
+        }
         result += buf;
     }
     break;
 
     // 间接Y变址指令 (($xx),Y)
-    case 0x71:
-    case 0x31:
     case 0x11:
-    case 0x51: // ADC, AND, ORA, EOR
+    case 0x31:
+    case 0x51:
+    case 0x71: // ORA, AND, EOR, ADC
     case 0xB1:
     case 0xD1:
     case 0xF1:
@@ -1023,73 +1063,17 @@ std::string CPU::DisassembleInstruction(uint8_t opcode, uint8_t param1, uint8_t 
         char buf[32];
         uint16_t indirectAddr = memory.Read(param1) | (memory.Read((param1 + 1) & 0xFF) << 8);
         uint16_t effectiveAddr = indirectAddr + registers.Y;
-        uint8_t memValue = memory.Read(effectiveAddr);
-        snprintf(buf, sizeof(buf), " ($%02X),Y = %04X @ %04X = %02X", param1, indirectAddr, effectiveAddr, memValue);
+        // 对于I/O寄存器地址，显示FF而不是实际值
+        if (opcode == 0x91 && IsIORegister(effectiveAddr))
+            snprintf(buf, sizeof(buf), " ($%02X),Y = %04X @ %04X = FF", param1, indirectAddr, effectiveAddr);
+        else
+        {
+            uint8_t memValue = memory.Read(effectiveAddr);
+            snprintf(buf, sizeof(buf), " ($%02X),Y = %04X @ %04X = %02X", param1, indirectAddr, effectiveAddr, memValue);
+        }
         result += buf;
     }
     break;
-
-    // 分支指令
-    case 0x10:
-    case 0x30:
-    case 0x50:
-    case 0x70: // BPL, BMI, BVC, BVS
-    case 0x90:
-    case 0xB0:
-    case 0xD0:
-    case 0xF0: // BCC, BCS, BNE, BEQ
-    {
-        int8_t offset = static_cast<int8_t>(param1);
-        // PC已经指向下一条指令，所以这里不需要+2，直接+offset即可
-        // 分支指令相对寻址是相对于取完指令后的PC值，即PC+2
-        uint16_t target = registers.PC + 2 + offset;
-        char buf[16];
-        snprintf(buf, sizeof(buf), " $%04X", target);
-        result += buf;
-    }
-    break;
-
-    // 隐含寻址指令不需要参数
-    case 0xAA:
-    case 0xA8:
-    case 0xBA:
-    case 0x8A: // TAX, TAY, TSX, TXA
-    case 0x9A:
-    case 0x98:
-    case 0xE8:
-    case 0xC8: // TXS, TYA, INX, INY
-    case 0xCA:
-    case 0x88:
-    case 0x18:
-    case 0xD8: // DEX, DEY, CLC, CLD
-    case 0x58:
-    case 0xB8:
-    case 0x38:
-    case 0xF8: // CLI, CLV, SEC, SED
-    case 0x78:
-    case 0x40:
-    case 0x60:
-    case 0x00: // SEI, RTI, RTS, BRK
-    case 0xEA:
-    case 0x48:
-    case 0x08:
-    case 0x68: // NOP, PHA, PHP, PLA
-    case 0x28:
-    case 0x1A:
-    case 0x3A:
-    case 0x5A: // PLP, NOP(非官方), NOP(非官方), NOP(非官方)
-    case 0x7A:
-    case 0xDA:
-    case 0xFA: // NOP(非官方), NOP(非官方), NOP(非官方)
-        break; // 不添加任何参数
-
-    // 累加器寻址指令
-    case 0x0A:
-    case 0x2A:
-    case 0x4A:
-    case 0x6A: // ASL A, ROL A, LSR A, ROR A
-        result += " A";
-        break;
 
     default:
         break;
@@ -1193,4 +1177,13 @@ uint8_t CPU::ReadByte(uint16_t addr)
 void CPU::WriteByte(uint16_t addr, uint8_t value)
 {
     memory.Write(addr, value);
+}
+
+// 检查是否为存储指令 (STA, STX, STY, SAX)
+bool CPU::IsStoreInstruction(uint8_t opcode) const
+{
+    // 在nestest.log中，只有特定的I/O寄存器地址会显示为FF
+    // 比如$4000-$401F APU和I/O寄存器
+    // 不是所有的存储指令都会显示为FF
+    return false;
 }

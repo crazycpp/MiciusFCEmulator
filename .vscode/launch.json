@@ -18,7 +18,7 @@
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/build/Debug/MiciusFCEmulator.exe",
-            "args": ["${workspaceFolder}/roms/nestest.nes", "--nestest"],
+            "args": ["--nestest","${workspaceFolder}/roms/nestest.nes"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],

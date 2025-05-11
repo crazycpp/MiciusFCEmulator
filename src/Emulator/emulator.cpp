@@ -1,5 +1,7 @@
 #include "emulator.h"
 #include <iostream>
+#include <fstream>
+#include <sstream>
 
 Emulator::Emulator()
 {
@@ -57,4 +59,50 @@ uint64_t Emulator::GetCpuCycles() const
 uint16_t Emulator::GetCpuPC() const
 {
     return m_Cpu->GetPC();
+}
+
+bool Emulator::GenerateNestestLog(const std::string& logPath)
+{
+    // 打开日志文件
+    std::ofstream logFile(logPath);
+    if (!logFile.is_open()) {
+        std::cerr << "Failed to open log file: " << logPath << std::endl;
+        return false;
+    }
+
+    // 设置起始地址为C000（nestest的自动测试入口点）
+    m_Cpu->SetPC(0xC000);
+
+    // 创建一个字符串流来捕获CPU状态输出
+    std::stringstream buffer;
+    
+    // 捕获初始状态
+    auto captureState = [&]() {
+        buffer.str(""); // 清空缓冲区
+        buffer.clear(); // 清除状态标志
+        
+        // 将CPU状态输出到缓冲区
+        m_Cpu->DumpState(buffer);
+        
+        // 将缓冲区内容写入日志文件
+        logFile << buffer.str();
+    };
+
+    // 打印初始状态
+    captureState();
+    
+    // 执行最多8991步（与原始nestest.log相同）
+    for (int i = 0; i < 8991; i++) {
+        m_Cpu->Step();
+        captureState();
+        
+        // 检查是否到达测试结束
+        if (m_Cpu->GetPC() == 0xC66E && i > 5000) {
+            break;
+        }
+    }
+    
+    logFile.close();
+    std::cout << "Nestest log generated: " << logPath << std::endl;
+    return true;
 }

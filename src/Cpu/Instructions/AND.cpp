@@ -35,6 +35,9 @@ uint8_t AND::Cycles() const
     case AddressingMode::IndirectX:
         cycles = 6;
         break;
+    case AddressingMode::IndirectY:
+        cycles = 5;
+        break;
     default:
         break;
     }

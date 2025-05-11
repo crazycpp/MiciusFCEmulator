@@ -6,6 +6,7 @@
 #include <string>
 #include <chrono>
 #include <thread>
+#include <filesystem>
 // #include "cpu/Cpu.h"
 // #include "ppu/Ppu.h"
 // #include "memory/Memory.h"
@@ -56,29 +57,22 @@ void RunNestest(const std::string &romPath, int maxSteps = 8991)
     }
 
     std::cout << "Nestest ROM loaded. Starting automated test...\n";
-    std::cout << "输出格式与标准nestest.log相同，可以通过下面的命令进行比对：\n";
-    std::cout << "fc nestest-output.log nestest.log (Windows)\n";
-    std::cout << "diff -u nestest-output.log nestest.log (Linux/Mac)\n\n";
 
-    // 设置起始地址为C000（nestest的自动测试入口点）
-    emulator.SetCpuPC(0xC000);
+    // 获取可执行文件所在目录
+    std::filesystem::path exePath = std::filesystem::current_path();
+    std::string logPath = (exePath / "nestest-output.log").string();
 
-    // 逐步执行并输出CPU状态以便与nestest.log比对
-    emulator.DumpCpuState(); // 打印初始状态
-    
-    for (int i = 0; i < maxSteps; i++)
+    // 生成nestest日志
+    if (emulator.GenerateNestestLog(logPath))
     {
-        emulator.Step();
-        emulator.DumpCpuState();
-        
-        // 检查是否到达测试结束
-        // 如果PC = 0xC66E且读取的值是0x60 (RTS指令)
-        if (emulator.GetCpuPC() == 0xC66E && i > 5000)
-        {
-            std::cout << "\nNestest 测试完成！\n";
-            std::cout << "如果输出信息与标准nestest.log一致，说明CPU实现是正确的。\n";
-            break;
-        }
+        std::cout << "Nestest log generated successfully at: " << logPath << std::endl;
+        std::cout << "You can compare it with the original nestest.log using:\n";
+        std::cout << "  fc nestest-output.log nestest.log (Windows)\n";
+        std::cout << "  diff -u nestest-output.log nestest.log (Linux/Mac)\n";
+    }
+    else
+    {
+        std::cerr << "Failed to generate nestest log." << std::endl;
     }
 }
 
@@ -87,12 +81,12 @@ int main(int argc, char *argv[])
     // 检查是否有命令行参数
     if (argc >= 2)
     {
-        std::string arg = argv[2];
+        std::string arg = argv[1];
         
         // 检查是否为nestest测试模式
         if (arg == "--nestest")
         {
-            std::string romPath = (argc >= 3) ? argv[1] : "roms/nestest.nes";
+            std::string romPath = (argc >= 3) ? argv[2] : "roms/nestest.nes";
             RunNestest(romPath);
             return 0;
         }

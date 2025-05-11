@@ -27,6 +27,9 @@ uint8_t LAX::Cycles() const
     case AddressingMode::ZeroPageX:
         cycles = 4;
         break;
+    case AddressingMode::ZeroPageY:
+        cycles = 4;
+        break;
     case AddressingMode::Absolute:
         cycles = 4;
         break;

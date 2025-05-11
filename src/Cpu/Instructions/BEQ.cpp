@@ -13,8 +13,13 @@ void BEQ::ExecuteWithAddress(CPU &cpu, uint16_t addr)
         cpu.SetPC(addr);
 
         // 分支成功，手动增加1个周期
-        // 如果跨页，需要在指令实现中额外处理周期
         cpu.AddCycles(1);
+
+        // 如果跨页，需要额外处理周期
+        if (addressingMode->PageBoundaryCrossed())
+        {
+            cpu.AddCycles(1);
+        }
     }
 }
 

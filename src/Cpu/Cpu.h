@@ -4,6 +4,7 @@
 #include <memory>
 #include <unordered_map>
 #include <string>
+#include <ostream>
 #include "Instructions/Instruction.h"
 #include "AddressingModes/AddressingMode.h"
 
@@ -27,10 +28,12 @@ public:
 
     // 用于调试/测试
     void DumpState() const;
+    void DumpState(std::ostream& out) const;
     
     // 反汇编辅助函数
     int GetInstructionLength(uint8_t opcode) const;
     std::string DisassembleInstruction(uint8_t opcode, uint8_t param1, uint8_t param2) const;
+    bool IsStoreInstruction(uint8_t opcode) const;
 
     // 获取当前CPU周期计数
     uint64_t GetCycles() const { return cycles; }

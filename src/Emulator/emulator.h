@@ -31,6 +31,9 @@ public:
     // 获取当前CPU的PC值
     uint16_t GetCpuPC() const;
 
+    // 生成nestest格式的日志
+    bool GenerateNestestLog(const std::string& logPath);
+
 private:
     std::unique_ptr<MemoryMap> m_MemoryMap;
     std::unique_ptr<CPU> m_Cpu;

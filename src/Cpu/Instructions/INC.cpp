@@ -18,34 +18,21 @@ uint8_t INC::Cycles() const
     uint8_t cycles = 0;
     switch (addressingMode->GetType())
     {
-    case AddressingMode::Immediate:
-        cycles = 2;
-        break;
-    case AddressingMode::ZeroPage:
-        cycles = 3;
-        break;
-    case AddressingMode::ZeroPageX:
-        cycles = 4;
-        break;
-    case AddressingMode::Absolute:
-        cycles = 4;
-        break;
-    case AddressingMode::AbsoluteX:
-        cycles = 4;
-        break;
-    case AddressingMode::AbsoluteY:
-        cycles = 4;
-        break;
-    case AddressingMode::IndirectX:
-        cycles = 6;
-        break;  
-    case AddressingMode::IndirectY:
-        cycles = 5;
-        break;
-    }
-    if (addressingMode->PageBoundaryCrossed())
-    {
-        cycles++;
+        case AddressingMode::ZeroPage:
+            cycles = 5;
+            break;
+        case AddressingMode::ZeroPageX:
+            cycles = 6;
+            break;
+        case AddressingMode::Absolute:
+            cycles = 6;
+            break;
+        case AddressingMode::AbsoluteX:
+            cycles = 7;
+            break;
+        default:
+            // INC不支持其他寻址模式
+            break;
     }
     return cycles;
 }
