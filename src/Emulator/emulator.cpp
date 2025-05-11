@@ -33,12 +33,19 @@ void Emulator::Reset()
 
 void Emulator::Step()
 {
+    // 检查PPU是否触发NMI
+    if (m_MemoryMap->GetPpu().HasNMIOccurred()) {
+        m_Cpu->TriggerNMI();
+        m_MemoryMap->GetPpu().ClearNMI();
+    }
+    
     // 执行一个CPU周期
     uint8_t cycles = m_Cpu->Step();
     
-    // 这里可以添加PPU和APU的处理逻辑
     // 每个CPU周期对应3个PPU周期(NTSC)
-    // ...
+    for (int i = 0; i < cycles * 3; i++) {
+        m_MemoryMap->GetPpu().Step();
+    }
 }
 
 void Emulator::DumpCpuState() const
@@ -59,6 +66,16 @@ uint64_t Emulator::GetCpuCycles() const
 uint16_t Emulator::GetCpuPC() const
 {
     return m_Cpu->GetPC();
+}
+
+PPU& Emulator::GetPpu()
+{
+    return m_MemoryMap->GetPpu();
+}
+
+bool Emulator::IsFrameComplete() const
+{
+    return m_MemoryMap->GetPpu().IsFrameComplete();
 }
 
 bool Emulator::GenerateNestestLog(const std::string& logPath)

@@ -5,6 +5,10 @@ MemoryMap::MemoryMap()
 {
     // 初始化RAM为0
     m_Ram.fill(0);
+    
+    // 创建PPU和PPU内存接口
+    m_Ppu = std::make_unique<PPU>();
+    m_PpuMemory = std::make_unique<PpuMemory>(*m_Ppu);
 }
 
 bool MemoryMap::LoadCartridge(const std::filesystem::path &romPath)
@@ -12,7 +16,12 @@ bool MemoryMap::LoadCartridge(const std::filesystem::path &romPath)
     try
     {
         m_Cartridge = std::make_unique<Cartridge>(romPath);
-        return m_Cartridge->Load();
+        if (m_Cartridge->Load()) {
+            // 连接PPU到卡带
+            m_Ppu->ConnectCartridge(m_Cartridge.get());
+            return true;
+        }
+        return false;
     }
     catch (const std::exception &e)
     {
@@ -32,9 +41,7 @@ uint8_t MemoryMap::Read(uint16_t addr)
     else if (addr < 0x4000)
     {
         // PPU寄存器镜像到每8字节
-        uint16_t ppuReg = 0x2000 + (addr & 0x0007);
-        // 测试模式下静默返回0
-        return 0; // 暂时返回0，后续实现PPU
+        return m_PpuMemory->Read(addr);
     }
     // APU和I/O寄存器 ($4000-$401F)
     else if (addr < 0x4020)
@@ -87,9 +94,8 @@ void MemoryMap::Write(uint16_t addr, uint8_t data)
     // PPU寄存器及其镜像 ($2000-$3FFF)
     else if (addr < 0x4000)
     {
-        // PPU寄存器镜像到每8字节
-        uint16_t ppuReg = 0x2000 + (addr & 0x0007);
-        // 静默处理，后续实现PPU寄存器写入
+        // 将写操作转发给PPU内存接口
+        m_PpuMemory->Write(addr, data);
     }
     // APU和I/O寄存器 ($4000-$401F)
     else if (addr < 0x4020)

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../Cpu/Cpu.h"
+#include "../Ppu/Ppu.h"
 #include "MemoryMap.h"
 #include <string>
 #include <memory>
@@ -33,6 +34,12 @@ public:
 
     // 生成nestest格式的日志
     bool GenerateNestestLog(const std::string& logPath);
+    
+    // 获取PPU引用
+    PPU& GetPpu();
+    
+    // 检查PPU是否完成一帧渲染
+    bool IsFrameComplete() const;
 
 private:
     std::unique_ptr<MemoryMap> m_MemoryMap;

@@ -2,6 +2,7 @@
 
 #include "../Cpu/Cpu.h"
 #include "../Cartridge/Cartridge.h"
+#include "../Ppu/Ppu.h"
 #include <array>
 #include <memory>
 
@@ -32,6 +33,9 @@ public:
     uint8_t Read(uint16_t addr) override;
     void Write(uint16_t addr, uint8_t data) override;
 
+    // 获取PPU对象引用
+    PPU& GetPpu() { return *m_Ppu; }
+
 private:
     // 主系统RAM (2KB)
     std::array<uint8_t, 0x800> m_Ram;
@@ -39,6 +43,7 @@ private:
     // 卡带
     std::unique_ptr<Cartridge> m_Cartridge;
     
-    // PPU和APU的寄存器访问暂不实现
-    // 之后会添加PPU和APU组件
+    // PPU
+    std::unique_ptr<PPU> m_Ppu;
+    std::unique_ptr<PpuMemory> m_PpuMemory;
 }; 

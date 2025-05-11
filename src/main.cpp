@@ -112,23 +112,81 @@ int main(int argc, char *argv[])
         SDL_Quit();
         return -1;
     }
+    
+    // 创建模拟器实例
+    Emulator emulator;
+    
+    // 加载默认ROM（如果有）
+    std::string defaultRom = "roms/nestest.nes";
+    if (std::filesystem::exists(defaultRom)) {
+        if (!emulator.LoadRom(defaultRom)) {
+            SDL_Log("Failed to load default ROM: %s", defaultRom.c_str());
+        } else {
+            SDL_Log("Loaded default ROM: %s", defaultRom.c_str());
+        }
+    } else {
+        SDL_Log("No ROM loaded. Please drag and drop a ROM file onto the window.");
+    }
 
     bool running = true;
     SDL_Event event;
+    
+    // 目标帧率（60 FPS）
+    const double targetFrameTime = 1.0 / 60.0;
+    
+    // 主循环
     while (running)
     {
+        // 记录帧开始时间
+        auto frameStart = std::chrono::high_resolution_clock::now();
+        
+        // 处理事件
         while (SDL_PollEvent(&event))
         {
             if (event.type == SDL_EVENT_QUIT)
             {
                 running = false;
             }
+            else if (event.type == SDL_EVENT_DROP_FILE)
+            {
+                // 处理拖放文件（加载ROM）
+                char* filePath = event.drop.file;
+                if (filePath) {
+                    if (emulator.LoadRom(filePath)) {
+                        SDL_Log("Loaded ROM: %s", filePath);
+                    } else {
+                        SDL_Log("Failed to load ROM: %s", filePath);
+                    }
+                    SDL_free(filePath);
+                }
+            }
         }
-
+        
+        // 运行模拟器直到完成一帧
+        bool frameComplete = false;
+        while (!frameComplete) {
+            emulator.Step();
+            frameComplete = emulator.IsFrameComplete();
+        }
+        
+        // 清屏
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
-        // TODO: 调用 PPU 绘制屏幕
+        
+        // 使用PPU渲染画面
+        emulator.GetPpu().RenderFrame(renderer);
+        
+        // 显示画面
         SDL_RenderPresent(renderer);
+        
+        // 计算帧耗时
+        auto frameEnd = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> frameDuration = frameEnd - frameStart;
+        
+        // 如果帧渲染太快，等待一段时间以保持稳定帧率
+        if (frameDuration.count() < targetFrameTime) {
+            std::this_thread::sleep_for(std::chrono::duration<double>(targetFrameTime - frameDuration.count()));
+        }
     }
 
     SDL_DestroyRenderer(renderer);
