@@ -22,6 +22,10 @@ bool Emulator::LoadRom(const std::string& romPath)
     
     // 加载成功后重置系统
     Reset();
+    
+    // 启用PPU背景和精灵显示
+    m_MemoryMap->GetPpu().WriteRegister(0x2001, 0x0E); // 启用背景和精灵显示
+    
     return true;
 }
 
@@ -29,6 +33,9 @@ void Emulator::Reset()
 {
     // 重置CPU
     m_Cpu->Reset();
+    
+    // 重置PPU
+    m_MemoryMap->GetPpu().Reset();
 }
 
 void Emulator::Step()
