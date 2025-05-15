@@ -7,6 +7,15 @@
 
 using namespace std;
 
+// 镜像类型枚举
+enum class MirroringType {
+    HORIZONTAL,
+    VERTICAL,
+    FOUR_SCREEN,
+    SINGLE_SCREEN_LOWER,
+    SINGLE_SCREEN_UPPER
+};
+
 class Cartridge
  {
 
@@ -26,6 +35,9 @@ public:
     
     const uint8_t* GetChrMemory() const { return m_ChrMemory.data(); }
     size_t GetChrMemorySize() const { return m_ChrMemory.size(); }
+    
+    // 获取镜像类型
+    MirroringType GetMirroringType() const { return m_VerticalMirror ? MirroringType::VERTICAL : MirroringType::HORIZONTAL; }
 
 private:
     bool CheckRomHeader(const std::vector<uint8_t>& romData);

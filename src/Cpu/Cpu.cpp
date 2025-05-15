@@ -1085,6 +1085,8 @@ std::string CPU::DisassembleInstruction(uint8_t opcode, uint8_t param1, uint8_t 
 // 中断处理
 void CPU::HandleNMI()
 {
+    std::cout << "Handling NMI at PC=0x" << std::hex << registers.PC << std::endl;
+    
     Push((registers.PC >> 8) & 0xFF);
     Push(registers.PC & 0xFF);
 
@@ -1097,6 +1099,9 @@ void CPU::HandleNMI()
     uint16_t lowByte = memory.Read(0xFFFA);
     uint16_t highByte = memory.Read(0xFFFB);
     registers.PC = (highByte << 8) | lowByte;
+    
+    std::cout << "NMI vector: 0x" << std::hex << registers.PC << std::endl;
+    std::cout << "NMI vector bytes: 0x" << std::hex << (int)lowByte << " 0x" << (int)highByte << std::endl;
 
     cycles += 7;
 }
