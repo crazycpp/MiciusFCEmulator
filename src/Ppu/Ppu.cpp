@@ -4,15 +4,6 @@
 #include <algorithm>
 #include <span>
 
-// 添加前向声明，确保编译器知道GetChrRom方法
-namespace std {
-    template<typename T>
-    class span;
-}
-
-class Cartridge;
-std::span<const uint8_t> Cartridge::GetChrRom() const { return std::span<const uint8_t>(m_ChrMemory.data(), m_ChrMemory.size()); }
-
 // NES color palette (RGB values)
 const uint32_t PPU::NES_COLORS[64] = {
     0xFF545454, 0xFF001E74, 0xFF081090, 0xFF300088, 0xFF440064, 0xFF5C0030, 0xFF540400, 0xFF3C1800,
@@ -238,11 +229,11 @@ uint8_t PPU::PpuRead(uint16_t addr)
     // Pattern tables (CHR ROM/RAM from cartridge)
     if (addr <= 0x1FFF)
     {
-        if (cartridge)
+        if (this->cartridge)
         {
             // Read from cartridge's CHR ROM/RAM
-            auto chrRom = cartridge->GetChrRom();
-            if (addr < chrRom.size())
+            auto chrRom = this->cartridge->GetChrRom();
+            if (!chrRom.empty() && addr < chrRom.size())
             {
                 return chrRom[addr];
             }
@@ -299,7 +290,7 @@ void PPU::PpuWrite(uint16_t addr, uint8_t data)
     // Pattern tables (CHR ROM/RAM from cartridge)
     if (addr <= 0x1FFF)
     {
-        if (cartridge)
+        if (this->cartridge)
         {
             // Some cartridges have writable CHR RAM
             // For now, we don't implement this

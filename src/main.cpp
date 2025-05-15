@@ -117,7 +117,7 @@ int main(int argc, char *argv[])
     Emulator emulator;
 
     // 加载默认ROM（如果有）
-    std::string defaultRom = "roms/nestest.nes";
+    std::string defaultRom = "roms/ppu_vbl_nmi.nes";
     if (std::filesystem::exists(defaultRom))
     {
         if (!emulator.LoadRom(defaultRom))
