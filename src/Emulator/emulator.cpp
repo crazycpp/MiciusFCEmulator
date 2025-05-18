@@ -123,5 +123,30 @@ bool Emulator::GenerateNestestLog(const std::string& logPath)
 
 void Emulator::RenderFrame(SDL_Renderer* renderer)
 {
+    // 首先，运行足够的周期来生成一帧
+    const int cyclesPerFrame = 29780;  // NTSC规格下一帧约为29780个CPU周期
+    
+    // 设置计数器以检测当前帧是否已完成
+    int frameCycles = 0;
+    
+    // 运行直到完成一帧
+    while (frameCycles < cyclesPerFrame) {
+        uint8_t cpuCycles = m_Cpu->Step();
+        
+        // 执行PPU周期
+        for (int i = 0; i < cpuCycles * 3; i++) {
+            m_Ppu->Step();
+        }
+        
+        // 检查是否触发了NMI
+        if (m_Ppu->CheckNMI()) {
+            m_Cpu->TriggerNMI();
+            m_Ppu->ClearNMI();
+        }
+        
+        frameCycles += cpuCycles;
+    }
+    
+    // 渲染当前帧
     m_Ppu->Render(renderer);
 }

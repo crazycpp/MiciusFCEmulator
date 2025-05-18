@@ -58,6 +58,12 @@ public:
 
     // 清除NMI标志
     void ClearNMI();
+    
+    // 清除并填充OAM内存
+    void FillOAM(uint8_t value);
+    
+    // 获取PPU状态寄存器的值
+    uint8_t GetStatus() const { return m_Status; }
 
 private:
     // PPU内部读写函数
@@ -104,7 +110,7 @@ private:
     uint64_t m_FrameCount;  // 帧计数器
 
     // NMI状态
-    bool m_NMIEnabled;
+    bool m_NMIEnabled;      // NMI启用标志
     bool m_NMIOccurred;
     
     // 内部状态

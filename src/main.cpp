@@ -99,7 +99,7 @@ int main(int argc, char *argv[])
     // 若无参数，则启动GUI模式
     SDL_SetLogPriorities(SDL_LOG_PRIORITY_VERBOSE);
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_EVENTS))
-    {
+    {   
         SDL_Log("SDL_Init failed: %s", SDL_GetError());
         return -1;
     }
@@ -150,19 +150,12 @@ int main(int argc, char *argv[])
         {
             lastTime = currentTime;
             
-            // 运行足够多的CPU/PPU周期来生成一帧
-            // 对于NTSC NES，一帧大约是29780个CPU周期(正确的值取决于实际系统)
-            // 这里我们简化处理，运行大约一帧所需的周期
-            for (int i = 0; i < 29780 / 3; i++)
-            {
-                emulator.Step();
-            }
-            
             // 清屏
             SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
             SDL_RenderClear(renderer);
             
             // 渲染当前帧
+            // 渲染框架内部会运行足够的CPU/PPU周期来生成一帧
             emulator.RenderFrame(renderer);
             
             // 显示渲染结果
