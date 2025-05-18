@@ -117,7 +117,7 @@ int main(int argc, char *argv[])
     Emulator emulator;
     
     // 默认加载Donkey Kong ROM
-    std::string romPath = "roms/Super_mario_brothers.nes";
+    std::string romPath = "roms/donkeykong.nes";
     if (!emulator.LoadRom(romPath))
     {
         SDL_Log("Failed to load ROM: %s", romPath.c_str());

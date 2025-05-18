@@ -21,7 +21,8 @@ PPU::PPU(MemoryMap& memoryMap)
       m_OamData(0), m_Scroll(0), m_PpuAddr(0), m_PpuData(0),
       m_AddressLatch(false), m_ScrollX(0), m_ScrollY(0), m_TempAddr(0),
       m_Cycle(0), m_ScanLine(261), m_FrameCount(0),  // 从预渲染扫描线开始 (261)
-      m_NMIEnabled(false), m_NMIOccurred(false), m_VerticalMirroring(true)
+      m_NMIEnabled(false), m_NMIOccurred(false), m_VerticalMirroring(true),
+      m_Texture(nullptr)
 {
     // 初始化内存
     m_VRAM.fill(0);
@@ -32,6 +33,15 @@ PPU::PPU(MemoryMap& memoryMap)
     // 初始化调色板 - 这对正确显示初始屏幕很重要
     for (int i = 0; i < 32; i += 4) {
         m_Palette[i] = 0x0F;  // 默认背景色
+    }
+}
+
+PPU::~PPU()
+{
+    // 释放SDL纹理资源
+    if (m_Texture != nullptr) {
+        SDL_DestroyTexture(m_Texture);
+        m_Texture = nullptr;
     }
 }
 
@@ -66,6 +76,12 @@ void PPU::SetCartridge(std::shared_ptr<Cartridge> cartridge)
     m_Palette.fill(0);
     for (int i = 0; i < 32; i += 4) {
         m_Palette[i] = 0x0F;  // 默认背景色
+    }
+    
+    // 释放纹理资源，下次Render时会重新创建
+    if (m_Texture != nullptr) {
+        SDL_DestroyTexture(m_Texture);
+        m_Texture = nullptr;
     }
 }
 
@@ -376,8 +392,8 @@ void PPU::RenderPixel()
                 uint8_t attributeData = Read(attributeAddr);
                 
                 // 确定调色板 (根据quadrant)
-                int quadrant = ((tileY & 0x02) >> 1) | ((tileX & 0x02) >> 1);
-                uint8_t paletteIndex = (attributeData >> (quadrant * 2)) & 0x03;
+                int shift = ((tileY & 0x02) << 1) | (tileX & 0x02);  // 0,2,4,6
+                uint8_t paletteIndex = (attributeData >> shift) & 0x03;
                 
                 // 计算patternTable中的位置 (PPUCTRL的bit 4控制背景pattern表)
                 uint16_t patternTableAddr = ((m_Control & 0x10) ? 0x1000 : 0) + (tileIndex * 16);
@@ -554,27 +570,26 @@ void PPU::RenderPixel()
 
 void PPU::Render(SDL_Renderer* renderer)
 {
-    // 创建纹理
-    SDL_Texture* texture = SDL_CreateTexture(
-        renderer,
-        SDL_PIXELFORMAT_ARGB8888,
-        SDL_TEXTUREACCESS_STREAMING,
-        256, 240
-    );
-    
-    if (!texture) {
-        std::cerr << "Failed to create texture: " << SDL_GetError() << std::endl;
-        return;
+    // 如果纹理还未创建，则创建一次
+    if (m_Texture == nullptr) {
+        m_Texture = SDL_CreateTexture(
+            renderer,
+            SDL_PIXELFORMAT_ARGB8888,
+            SDL_TEXTUREACCESS_STREAMING,
+            256, 240
+        );
+        
+        if (!m_Texture) {
+            std::cerr << "Failed to create texture: " << SDL_GetError() << std::endl;
+            return;
+        }
     }
     
     // 更新纹理数据
-    SDL_UpdateTexture(texture, nullptr, m_FrameBuffer.data(), 256 * sizeof(uint32_t));
+    SDL_UpdateTexture(m_Texture, nullptr, m_FrameBuffer.data(), 256 * sizeof(uint32_t));
     
     // 渲染纹理
-    SDL_RenderTexture(renderer, texture, nullptr, nullptr);
-    
-    // 销毁纹理
-    SDL_DestroyTexture(texture);
+    SDL_RenderTexture(renderer, m_Texture, nullptr, nullptr);
     
     // 清空帧缓冲区，准备下一帧
     m_FrameBuffer.fill(0);

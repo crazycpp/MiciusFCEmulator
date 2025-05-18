@@ -23,7 +23,7 @@ class MemoryMap;
 class PPU {
 public:
     PPU(MemoryMap& memoryMap);
-    ~PPU() = default;
+    ~PPU();
 
     // PPU寄存器 ($2000-$2007)
     enum Registers {
@@ -115,6 +115,9 @@ private:
     
     // 内部状态
     bool m_VerticalMirroring; // 从卡带获取的镜像模式
+
+    // SDL纹理缓存 - 避免每帧创建和销毁
+    SDL_Texture* m_Texture; 
 
     // NES系统调色板 (RGB颜色值)
     static const uint32_t SYSTEM_PALETTE[64];
