@@ -6,7 +6,11 @@
 Emulator::Emulator()
 {
     // 创建内存映射
-    m_MemoryMap = std::make_unique<MemoryMap>();
+    m_MemoryMap = std::make_shared<MemoryMap>();
+    
+    // 创建PPU并连接到内存映射
+    m_Ppu = std::make_shared<PPU>(*m_MemoryMap);
+    m_MemoryMap->SetPPU(m_Ppu);
     
     // 创建CPU并连接到内存映射
     m_Cpu = std::make_unique<CPU>(*m_MemoryMap);
@@ -19,6 +23,9 @@ bool Emulator::LoadRom(const std::string& romPath)
         std::cerr << "Failed to load ROM: " << romPath << std::endl;
         return false;
     }
+    
+    // 将卡带设置到PPU
+    m_Ppu->SetCartridge(m_MemoryMap->GetCartridge());
     
     // 加载成功后重置系统
     Reset();
@@ -33,12 +40,19 @@ void Emulator::Reset()
 
 void Emulator::Step()
 {
+    // 检查PPU是否触发NMI
+    if (m_Ppu->CheckNMI()) {
+        m_Cpu->TriggerNMI();
+        m_Ppu->ClearNMI();
+    }
+    
     // 执行一个CPU周期
     uint8_t cycles = m_Cpu->Step();
     
-    // 这里可以添加PPU和APU的处理逻辑
-    // 每个CPU周期对应3个PPU周期(NTSC)
-    // ...
+    // 每个CPU周期执行3个PPU周期(NTSC)
+    for (int i = 0; i < cycles * 3; i++) {
+        m_Ppu->Step();
+    }
 }
 
 void Emulator::DumpCpuState() const
@@ -105,4 +119,9 @@ bool Emulator::GenerateNestestLog(const std::string& logPath)
     logFile.close();
     std::cout << "Nestest log generated: " << logPath << std::endl;
     return true;
+}
+
+void Emulator::RenderFrame(SDL_Renderer* renderer)
+{
+    m_Ppu->Render(renderer);
 }

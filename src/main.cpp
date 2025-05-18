@@ -113,8 +113,25 @@ int main(int argc, char *argv[])
         return -1;
     }
 
+    // 创建模拟器并加载ROM
+    Emulator emulator;
+    
+    // 默认加载Donkey Kong ROM
+    std::string romPath = "roms/Super_mario_brothers.nes";
+    if (!emulator.LoadRom(romPath))
+    {
+        SDL_Log("Failed to load ROM: %s", romPath.c_str());
+        SDL_DestroyRenderer(renderer);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return -1;
+    }
+    
     bool running = true;
     SDL_Event event;
+    uint64_t lastTime = SDL_GetTicks();
+    const double frameTime = 1000.0 / 60.0; // 目标60FPS
+    
     while (running)
     {
         while (SDL_PollEvent(&event))
@@ -125,10 +142,37 @@ int main(int argc, char *argv[])
             }
         }
 
-        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-        SDL_RenderClear(renderer);
-        // TODO: 调用 PPU 绘制屏幕
-        SDL_RenderPresent(renderer);
+        // 计算帧率控制
+        uint64_t currentTime = SDL_GetTicks();
+        double elapsed = currentTime - lastTime;
+        
+        if (elapsed >= frameTime)
+        {
+            lastTime = currentTime;
+            
+            // 运行足够多的CPU/PPU周期来生成一帧
+            // 对于NTSC NES，一帧大约是29780个CPU周期(正确的值取决于实际系统)
+            // 这里我们简化处理，运行大约一帧所需的周期
+            for (int i = 0; i < 29780 / 3; i++)
+            {
+                emulator.Step();
+            }
+            
+            // 清屏
+            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+            SDL_RenderClear(renderer);
+            
+            // 渲染当前帧
+            emulator.RenderFrame(renderer);
+            
+            // 显示渲染结果
+            SDL_RenderPresent(renderer);
+        }
+        else
+        {
+            // 如果时间不足一帧，让CPU休息一下以减少资源占用
+            SDL_Delay(1);
+        }
     }
 
     SDL_DestroyRenderer(renderer);

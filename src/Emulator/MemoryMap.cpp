@@ -1,4 +1,5 @@
 #include "MemoryMap.h"
+#include "../Ppu/Ppu.h"
 #include <iostream>
 
 MemoryMap::MemoryMap()
@@ -11,7 +12,7 @@ bool MemoryMap::LoadCartridge(const std::filesystem::path &romPath)
 {
     try
     {
-        m_Cartridge = std::make_unique<Cartridge>(romPath);
+        m_Cartridge = std::make_shared<Cartridge>(romPath);
         return m_Cartridge->Load();
     }
     catch (const std::exception &e)
@@ -19,6 +20,11 @@ bool MemoryMap::LoadCartridge(const std::filesystem::path &romPath)
         std::cerr << "Error loading cartridge: " << e.what() << std::endl;
         return false;
     }
+}
+
+void MemoryMap::SetPPU(std::shared_ptr<PPU> ppu)
+{
+    m_Ppu = ppu;
 }
 
 uint8_t MemoryMap::Read(uint16_t addr)
@@ -33,12 +39,22 @@ uint8_t MemoryMap::Read(uint16_t addr)
     {
         // PPU寄存器镜像到每8字节
         uint16_t ppuReg = 0x2000 + (addr & 0x0007);
-        // 测试模式下静默返回0
-        return 0; // 暂时返回0，后续实现PPU
+        
+        if (m_Ppu)
+        {
+            return m_Ppu->ReadRegister(ppuReg);
+        }
+        return 0;
     }
     // APU和I/O寄存器 ($4000-$401F)
     else if (addr < 0x4020)
     {
+        // 暂时只处理PPU的OAM DMA寄存器 (0x4014)
+        if (addr == 0x4014 && m_Ppu)
+        {
+            return 0; // OAM DMA寄存器只能写入，不能读取
+        }
+        
         // 测试模式下静默返回0
         return 0; // 暂时返回0，后续实现APU和I/O
     }
@@ -60,10 +76,10 @@ uint8_t MemoryMap::Read(uint16_t addr)
         if (m_Cartridge)
         {
             // 使用span获取PRG-ROM数据
-            auto prgRom = m_Cartridge->GetPrgRom();
+            auto prgRom = m_Cartridge->GetPrgMemory();
 
             // 处理ROM镜像 (如果PRG-ROM只有16KB，则镜像到$C000-$FFFF)
-            size_t prgSize = prgRom.size();
+            size_t prgSize = m_Cartridge->GetPrgMemorySize();
             if (prgSize == 16 * 1024)
             { // 16KB PRG-ROM
                 return prgRom[(addr - 0x8000) % prgSize];
@@ -89,12 +105,21 @@ void MemoryMap::Write(uint16_t addr, uint8_t data)
     {
         // PPU寄存器镜像到每8字节
         uint16_t ppuReg = 0x2000 + (addr & 0x0007);
-        // 静默处理，后续实现PPU寄存器写入
+        
+        if (m_Ppu)
+        {
+            m_Ppu->WriteRegister(ppuReg, data);
+        }
     }
     // APU和I/O寄存器 ($4000-$401F)
     else if (addr < 0x4020)
     {
-        // 静默处理，后续实现APU和I/O寄存器
+        // 处理PPU的OAM DMA寄存器 (0x4014)
+        if (addr == 0x4014 && m_Ppu)
+        {
+            m_Ppu->WriteRegister(0x4014, data);
+        }
+        // 其他APU和I/O寄存器暂不处理
     }
     // 扩展ROM ($4020-$5FFF) - 通常不可写
     else if (addr < 0x6000)

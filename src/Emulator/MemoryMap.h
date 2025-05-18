@@ -5,6 +5,9 @@
 #include <array>
 #include <memory>
 
+// 前向声明
+class PPU;
+
 /**
  * NES内存映射实现
  * 
@@ -32,13 +35,22 @@ public:
     uint8_t Read(uint16_t addr) override;
     void Write(uint16_t addr, uint8_t data) override;
 
+    // 设置PPU
+    void SetPPU(std::shared_ptr<PPU> ppu);
+
+    // 获取PPU
+    std::shared_ptr<PPU> GetPPU() const { return m_Ppu; }
+
+    // 获取卡带
+    std::shared_ptr<Cartridge> GetCartridge() const { return m_Cartridge; }
+
 private:
     // 主系统RAM (2KB)
     std::array<uint8_t, 0x800> m_Ram;
     
     // 卡带
-    std::unique_ptr<Cartridge> m_Cartridge;
+    std::shared_ptr<Cartridge> m_Cartridge;
     
-    // PPU和APU的寄存器访问暂不实现
-    // 之后会添加PPU和APU组件
+    // PPU
+    std::shared_ptr<PPU> m_Ppu;
 }; 

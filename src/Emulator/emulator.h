@@ -1,9 +1,11 @@
 #pragma once
 
 #include "../Cpu/Cpu.h"
+#include "../Ppu/Ppu.h"
 #include "MemoryMap.h"
 #include <string>
 #include <memory>
+#include <SDL3/SDL.h>
 
 class Emulator {
 public:
@@ -34,7 +36,11 @@ public:
     // 生成nestest格式的日志
     bool GenerateNestestLog(const std::string& logPath);
 
+    // 渲染帧
+    void RenderFrame(SDL_Renderer* renderer);
+
 private:
-    std::unique_ptr<MemoryMap> m_MemoryMap;
+    std::shared_ptr<MemoryMap> m_MemoryMap;
     std::unique_ptr<CPU> m_Cpu;
+    std::shared_ptr<PPU> m_Ppu;
 };

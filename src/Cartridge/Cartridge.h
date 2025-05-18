@@ -17,8 +17,8 @@ public:
     bool Load();
 
     // 提供std::span访问内存
-    std::span<const uint8_t> GetPrgRom() const { return std::span<const uint8_t>(m_PrgMemory.data(), m_PrgMemory.size()); }
-    std::span<const uint8_t> GetChrRom() const { return std::span<const uint8_t>(m_ChrMemory.data(), m_ChrMemory.size()); }
+    //std::span<const uint8_t> GetPrgRom() const { return std::span<const uint8_t>(m_PrgMemory.data(), m_PrgMemory.size()); }
+    //std::span<const uint8_t> GetChrRom() const { return std::span<const uint8_t>(m_ChrMemory.data(), m_ChrMemory.size()); }
     
     // 同时保留原始访问方式以保证兼容性
     const uint8_t* GetPrgMemory() const { return m_PrgMemory.data(); }
