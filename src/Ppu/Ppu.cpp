@@ -82,7 +82,7 @@ uint8_t PPU::ReadRegister(uint16_t reg)
             return status;
         }
         case OAMDATA:
-            // 读取OAM数据
+            // 读取OAM数据 (注意：这里不会自动增加OAM地址)
             return m_OAM[m_OamAddr];
         case PPUDATA: {
             // 读取PPU数据
@@ -110,6 +110,13 @@ uint8_t PPU::ReadRegister(uint16_t reg)
 
 void PPU::WriteRegister(uint16_t reg, uint8_t data)
 {
+    // 特殊处理OAMDMA寄存器，它位于0x4014而不是PPU寄存器范围内
+    if (reg == 0x4014) {
+        DoOAMDMA(data);
+        return;
+    }
+
+    // 处理PPU寄存器(0x2000-0x2007)及其镜像
     switch (reg & 0x2007) {
         case PPUCTRL: {
             bool oldNMIEnabled = m_NMIEnabled; // 保存旧的NMI状态
@@ -130,12 +137,17 @@ void PPU::WriteRegister(uint16_t reg, uint8_t data)
         }
         case PPUMASK:
             m_Mask = data;
+            // 位3控制背景渲染，位4控制精灵渲染
+            // std::cout << "PPUMASK写入: " << std::hex << (int)data 
+            //           << " 精灵显示: " << ((data & 0x10) ? "启用" : "禁用") << std::endl;
             break;
         case OAMADDR:
             m_OamAddr = data;
             break;
         case OAMDATA:
-            m_OAM[m_OamAddr++] = data;
+            // 写入OAM数据，然后增加OAM地址
+            m_OAM[m_OamAddr] = data;
+            m_OamAddr = (m_OamAddr + 1) & 0xFF; // 确保OAM地址在0-255范围内循环
             break;
         case PPUSCROLL:
             if (!m_AddressLatch) {
@@ -166,20 +178,20 @@ void PPU::WriteRegister(uint16_t reg, uint8_t data)
             // 地址自增 (根据PPUCTRL第2位决定增量)
             m_PpuAddr += (m_Control & 0x04) ? 32 : 1;
             break;
-        case OAMDMA:
-            // CPU地址空间0x4014，需要从主程序处理
-            DoOAMDMA(data);
-            break;
     }
 }
 
 void PPU::DoOAMDMA(uint8_t page)
 {
     // 从CPU内存页page * 0x100开始复制256字节到OAM
+    // DMA 传输总是从 OAM[0] 开始，而不是当前的 m_OamAddr
     uint16_t addr = page << 8;
     for (int i = 0; i < 256; i++) {
-        m_OAM[m_OamAddr++] = m_MemoryMap.Read(addr + i);
+        uint8_t data = m_MemoryMap.Read(addr + i);
+        m_OAM[i] = data; // 直接写入到OAM[i]，而不是m_OamAddr
     }
+    
+    // DMA传输不会改变m_OamAddr
 }
 
 uint8_t PPU::Read(uint16_t addr)
@@ -403,95 +415,126 @@ void PPU::RenderPixel()
             bool showLeftSprites = (m_Mask & 0x04) != 0;
             
             if (showLeftSprites || x >= 8) {
-                int spriteCount = 0;
-                bool foundSprite = false;
-                bool spriteBehindBackground = false;
-                uint8_t spriteColor = 0;
+                // 存储可见精灵数据
+                struct SpriteData {
+                    int index;
+                    uint8_t x;
+                    uint8_t y;
+                    uint8_t tileIndex;
+                    uint8_t attributes;
+                    bool visible;
+                };
                 
-                // 从后向前扫描OAM (较低索引的精灵优先显示)
-                for (int i = 0; i < 64 && spriteCount < 8; i++) {
-                    // 读取精灵属性
+                // 最多8个精灵可以同时在一条扫描线上
+                SpriteData visibleSprites[8];
+                int visibleCount = 0;
+                int spriteCount = 0;
+                
+                // 扫描所有64个精灵，找出位于当前扫描线的精灵
+                for (int i = 0; i < 64 && visibleCount < 8; i++) {
                     uint8_t spriteY = m_OAM[i * 4 + 0];
-                    uint8_t tileIndex = m_OAM[i * 4 + 1];
-                    uint8_t attributes = m_OAM[i * 4 + 2];
-                    uint8_t spriteX = m_OAM[i * 4 + 3];
+                    int      yTop  = spriteY + 1;                 // ★ 正式屏幕坐标
+                    if (yTop > 239) continue; 
+                    // NES精灵Y坐标的特殊规则：Y=0是在画面外，Y=1是第一行
+                    //if (spriteY >= 0xEF) continue; // 无效精灵(Y >= 239)
                     
-                    // 检查是否在Y范围内
-                    if (y >= spriteY && y < (spriteY + spriteHeight)) {
+                    // 检查精灵是否在当前扫描线上
+                    if (y >= yTop && y < yTop + spriteHeight) {
                         spriteCount++;
                         
-                        // 检查是否在X范围内
-                        if (x >= spriteX && x < (spriteX + 8)) {
-                            // 计算精灵内的偏移
-                            int xOffset = x - spriteX;
-                            int yOffset = y - spriteY;
-                            
-                            // 处理翻转
-                            if (attributes & 0x40) { // 水平翻转
-                                xOffset = 7 - xOffset;
-                            }
-                            
-                            if (attributes & 0x80) { // 垂直翻转
-                                yOffset = spriteHeight - 1 - yOffset;
-                            }
-                            
-                            // 处理8x16精灵的特殊情况
-                            uint16_t patternAddr;
-                            if (spriteHeight == 16) {
-                                // 对于8x16精灵，使用tile index的bit 0选择pattern表
-                                uint16_t baseTable = (tileIndex & 1) * 0x1000;
-                                uint8_t tileNum = tileIndex & 0xFE; // 清除最低位
-                                
-                                if (yOffset >= 8) {
-                                    // 下半部分
-                                    yOffset -= 8;
-                                    patternAddr = baseTable + ((tileNum + 1) * 16) + yOffset;
-                                } else {
-                                    // 上半部分
-                                    patternAddr = baseTable + (tileNum * 16) + yOffset;
-                                }
-                            } else {
-                                // 对于8x8精灵，使用PPUCTRL的bit 3选择pattern表
-                                uint16_t baseTable = ((m_Control & 0x08) ? 0x1000 : 0);
-                                patternAddr = baseTable + (tileIndex * 16) + yOffset;
-                            }
-                            
-                            // 读取精灵pattern数据
-                            uint8_t patternLow = Read(patternAddr);
-                            uint8_t patternHigh = Read(patternAddr + 8);
-                            
-                            // 提取颜色位
-                            uint8_t bitPos = 7 - xOffset;
-                            uint8_t lowBit = (patternLow >> bitPos) & 1;
-                            uint8_t highBit = (patternHigh >> bitPos) & 1;
-                            uint8_t colorBits = (highBit << 1) | lowBit;
-                            
-                            // 精灵调色板使用属性的低2位
-                            uint8_t spritePaletteIndex = attributes & 0x03;
-                            
-                            // 如果精灵像素不透明 (非零)
-                            if (colorBits != 0) {
-                                foundSprite = true;
-                                spriteBehindBackground = (attributes & 0x20) != 0;
-                                spriteColor = Read(0x3F10 + (spritePaletteIndex * 4) + colorBits);
-                                
-                                // 处理精灵0碰撞检测
-                                if (i == 0 && bgOpaque && x < 255) {
-                                    m_Status |= 0x40; // 设置sprite 0 hit标志
-                                }
-                                
-                                break; // 找到第一个精灵后停止
-                            }
+                        // 保存在当前扫描线上可见的精灵数据
+                        if (visibleCount < 8) {
+                            visibleSprites[visibleCount].index = i;
+                            visibleSprites[visibleCount].y = spriteY;
+                            visibleSprites[visibleCount].tileIndex = m_OAM[i * 4 + 1];
+                            visibleSprites[visibleCount].attributes = m_OAM[i * 4 + 2];
+                            visibleSprites[visibleCount].x = m_OAM[i * 4 + 3];
+                            visibleSprites[visibleCount].visible = true;
+                            visibleCount++;
                         }
                     }
                 }
                 
-                // 设置溢出标志
-                if (spriteCount >= 8) {
+                // 如果有超过8个精灵在同一行，设置溢出标志
+                if (spriteCount > 8) {
                     m_Status |= 0x20;
                 }
                 
-                // 应用精灵颜色（如果需要）
+                // 查找当前像素是否有精灵
+                bool foundSprite = false;
+                bool spriteBehindBackground = false;
+                uint8_t spriteColor = 0;
+                
+                // 从后往前检查精灵，先找到的（索引低的）优先
+                for (int s = 0; s < visibleCount; s++) {
+                    SpriteData& sprite = visibleSprites[s];
+                    
+                    // 检查X坐标是否匹配
+                    if (x >= sprite.x && x < sprite.x + 8) {
+                        // 计算精灵内的偏移
+                        int xOffset = x - sprite.x;
+                        int yOffset = y - sprite.y;
+                        
+                        // 处理翻转
+                        if (sprite.attributes & 0x40) { // 水平翻转
+                            xOffset = 7 - xOffset;
+                        }
+                        
+                        if (sprite.attributes & 0x80) { // 垂直翻转
+                            yOffset = spriteHeight - 1 - yOffset;
+                        }
+                        
+                        // 处理8x16精灵的特殊情况
+                        uint16_t patternAddr;
+                        if (spriteHeight == 16) {
+                            // 对于8x16精灵，使用tile index的bit 0选择pattern表
+                            uint16_t baseTable = (sprite.tileIndex & 1) * 0x1000;
+                            uint8_t tileNum = sprite.tileIndex & 0xFE; // 清除最低位
+                            
+                            if (yOffset >= 8) {
+                                // 下半部分
+                                yOffset -= 8;
+                                patternAddr = baseTable + ((tileNum + 1) * 16) + yOffset;
+                            } else {
+                                // 上半部分
+                                patternAddr = baseTable + (tileNum * 16) + yOffset;
+                            }
+                        } else {
+                            // 对于8x8精灵，使用PPUCTRL的bit 3选择pattern表
+                            uint16_t baseTable = ((m_Control & 0x08) ? 0x1000 : 0);
+                            patternAddr = baseTable + (sprite.tileIndex * 16) + yOffset;
+                        }
+                        
+                        // 读取精灵pattern数据
+                        uint8_t patternLow = Read(patternAddr);
+                        uint8_t patternHigh = Read(patternAddr + 8);
+                        
+                        // 提取颜色位
+                        uint8_t bitPos = 7 - xOffset;
+                        uint8_t lowBit = (patternLow >> bitPos) & 1;
+                        uint8_t highBit = (patternHigh >> bitPos) & 1;
+                        uint8_t colorBits = (highBit << 1) | lowBit;
+                        
+                        // 精灵调色板使用属性的低2位
+                        uint8_t spritePaletteIndex = sprite.attributes & 0x03;
+                        
+                        // 如果精灵像素不透明 (非零)
+                        if (colorBits != 0) {
+                            foundSprite = true;
+                            spriteBehindBackground = (sprite.attributes & 0x20) != 0;
+                            spriteColor = Read(0x3F10 + (spritePaletteIndex * 4) + colorBits);
+                            
+                            // 处理精灵0碰撞检测
+                            if (sprite.index == 0 && bgOpaque && x < 255) {
+                                m_Status |= 0x40; // 设置sprite 0 hit标志
+                            }
+                            
+                            break; // 找到第一个精灵后停止
+                        }
+                    }
+                }
+                
+                // 应用精灵颜色（如果找到了精灵）
                 if (foundSprite) {
                     // 精灵优先级规则：
                     // 1. 背景透明时，显示精灵
