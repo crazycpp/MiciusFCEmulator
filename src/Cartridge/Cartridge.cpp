@@ -34,7 +34,7 @@ bool Cartridge::Load()
     m_PrgRomSize = romData[4];
     m_ChrRomSize = romData[5];
     m_Mapper = (romData[6] >> 4) | (romData[7] & 0xF0);
-    m_VerticalMirror = (romData[6] & 0x01) == 0;
+    m_VerticalMirror = (romData[6] & 0x01) != 0;
 
     LoadRomData(romData);
 

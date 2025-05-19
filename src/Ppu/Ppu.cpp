@@ -49,8 +49,8 @@ void PPU::SetCartridge(std::shared_ptr<Cartridge> cartridge)
 {
     m_Cartridge = cartridge;
     
-    // 设置默认镜像模式
-    m_VerticalMirroring = true; // 默认垂直镜像
+    // 从卡带获取镜像模式
+    m_VerticalMirroring = m_Cartridge->GetVerticalMirroring();
     
     // 重置PPU状态
     m_Control = 0;
@@ -230,15 +230,17 @@ uint8_t PPU::Read(uint16_t addr)
         }
         return 0;
     } else if (addr < 0x3000) {
-        // Nametables (根据镜像模式从VRAM读取)
+        // Nametables
         addr &= 0x0FFF;
         
         // 根据镜像模式调整地址
         if (m_VerticalMirroring) {
-            // 垂直镜像: $2000=$2800, $2400=$2C00
+            // 垂直镜像: $2000和$2800映射到同一个物理区域，$2400和$2C00映射到另一个物理区域
+            // 只需取模0x800即可实现垂直镜像
             addr = addr & 0x07FF;
         } else {
-            // 水平镜像: $2000=$2400, $2800=$2C00
+            // 水平镜像: $2000和$2400映射到同一个物理区域，$2800和$2C00映射到另一个物理区域
+            // 位11决定高/低半部分，位10被忽略
             addr = (addr & 0x03FF) | ((addr & 0x0800) >> 1);
         }
         
@@ -276,10 +278,12 @@ void PPU::Write(uint16_t addr, uint8_t data)
         
         // 根据镜像模式调整地址
         if (m_VerticalMirroring) {
-            // 垂直镜像: $2000=$2800, $2400=$2C00
+            // 垂直镜像: $2000和$2800映射到同一个物理区域，$2400和$2C00映射到另一个物理区域
+            // 只需取模0x800即可实现垂直镜像
             addr = addr & 0x07FF;
         } else {
-            // 水平镜像: $2000=$2400, $2800=$2C00
+            // 水平镜像: $2000和$2400映射到同一个物理区域，$2800和$2C00映射到另一个物理区域
+            // 位11决定高/低半部分，位10被忽略
             addr = (addr & 0x03FF) | ((addr & 0x0800) >> 1);
         }
         

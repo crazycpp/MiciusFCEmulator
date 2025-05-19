@@ -26,6 +26,9 @@ public:
     
     const uint8_t* GetChrMemory() const { return m_ChrMemory.data(); }
     size_t GetChrMemorySize() const { return m_ChrMemory.size(); }
+    
+    // 获取镜像模式
+    bool GetVerticalMirroring() const { return m_VerticalMirror; }
 
 private:
     bool CheckRomHeader(const std::vector<uint8_t>& romData);
