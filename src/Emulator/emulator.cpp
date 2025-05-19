@@ -123,6 +123,9 @@ bool Emulator::GenerateNestestLog(const std::string& logPath)
 
 void Emulator::RenderFrame(SDL_Renderer* renderer)
 {
+    // 更新控制器状态
+    m_MemoryMap->UpdateController();
+    
     // 首先，运行足够的周期来生成一帧
     const int cyclesPerFrame = 29780;  // NTSC规格下一帧约为29780个CPU周期
     

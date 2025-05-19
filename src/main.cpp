@@ -98,7 +98,7 @@ int main(int argc, char *argv[])
 
     // 若无参数，则启动GUI模式
     SDL_SetLogPriorities(SDL_LOG_PRIORITY_VERBOSE);
-    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_EVENTS))
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_EVENTS | SDL_INIT_GAMEPAD))
     {   
         SDL_Log("SDL_Init failed: %s", SDL_GetError());
         return -1;
@@ -113,11 +113,34 @@ int main(int argc, char *argv[])
         return -1;
     }
 
+    // 打印手柄信息
+    SDL_JoystickID *joysticks;
+    int joystick_count = 0;
+    joysticks = SDL_GetJoysticks(&joystick_count);
+    
+    if (joysticks) {
+        SDL_Log("Joysticks detected: %d", joystick_count);
+        for (int i = 0; i < joystick_count; ++i) {
+            SDL_JoystickID id = joysticks[i];
+            if (SDL_IsGamepad(id)) {
+                SDL_Log("Gamepad %d: %s", i, SDL_GetGamepadNameForID(id));
+            } else {
+                SDL_Log("Joystick %d: %s", i, SDL_GetJoystickNameForID(id));
+            }
+        }
+        SDL_free(joysticks);
+    }
+
     // 创建模拟器并加载ROM
     Emulator emulator;
     
     // 默认加载Donkey Kong ROM
     std::string romPath = "roms/donkeykong.nes";
+    if (argc >= 2) {
+        romPath = argv[1]; // 如果提供了命令行参数，则使用它作为ROM路径
+    }
+    
+    // 加载ROM
     if (!emulator.LoadRom(romPath))
     {
         SDL_Log("Failed to load ROM: %s", romPath.c_str());
@@ -126,6 +149,10 @@ int main(int argc, char *argv[])
         SDL_Quit();
         return -1;
     }
+    
+    SDL_Log("Loaded ROM: %s", romPath.c_str());
+    SDL_Log("Controls: Arrow Keys for movement, Z for A button, X for B button, Enter for Start, Right Shift for Select");
+    SDL_Log("Gamepad: D-Pad for movement, A/B buttons for B/A NES buttons, Start/Back for Start/Select");
     
     bool running = true;
     SDL_Event event;
@@ -139,6 +166,14 @@ int main(int argc, char *argv[])
             if (event.type == SDL_EVENT_QUIT)
             {
                 running = false;
+            }
+            else if (event.type == SDL_EVENT_KEY_DOWN)
+            {
+                // 按ESC键退出
+                if (event.key.key == SDLK_ESCAPE)
+                {
+                    running = false;
+                }
             }
         }
 

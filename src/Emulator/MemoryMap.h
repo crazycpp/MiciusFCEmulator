@@ -2,6 +2,7 @@
 
 #include "../Cpu/Cpu.h"
 #include "../Cartridge/Cartridge.h"
+#include "../Controller/Controller.h"
 #include <array>
 #include <memory>
 
@@ -43,6 +44,12 @@ public:
 
     // 获取卡带
     std::shared_ptr<Cartridge> GetCartridge() const { return m_Cartridge; }
+    
+    // 获取控制器
+    std::shared_ptr<Controller> GetController() const { return m_Controller; }
+    
+    // 更新控制器状态
+    void UpdateController();
 
 private:
     // 主系统RAM (2KB)
@@ -53,4 +60,7 @@ private:
     
     // PPU
     std::shared_ptr<PPU> m_Ppu;
+    
+    // 控制器
+    std::shared_ptr<Controller> m_Controller;
 }; 

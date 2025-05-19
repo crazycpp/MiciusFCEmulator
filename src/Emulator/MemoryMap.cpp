@@ -6,6 +6,10 @@ MemoryMap::MemoryMap()
 {
     // 初始化RAM为0
     m_Ram.fill(0);
+    
+    // 创建并初始化控制器
+    m_Controller = std::make_shared<Controller>();
+    m_Controller->Initialize();
 }
 
 bool MemoryMap::LoadCartridge(const std::filesystem::path &romPath)
@@ -25,6 +29,13 @@ bool MemoryMap::LoadCartridge(const std::filesystem::path &romPath)
 void MemoryMap::SetPPU(std::shared_ptr<PPU> ppu)
 {
     m_Ppu = ppu;
+}
+
+void MemoryMap::UpdateController()
+{
+    if (m_Controller) {
+        m_Controller->Update();
+    }
 }
 
 uint8_t MemoryMap::Read(uint16_t addr)
@@ -49,8 +60,15 @@ uint8_t MemoryMap::Read(uint16_t addr)
     // APU和I/O寄存器 ($4000-$401F)
     else if (addr < 0x4020)
     {
+        // 处理控制器读取
+        if (addr == 0x4016 && m_Controller) {
+            return m_Controller->Read(0); // 读取控制器1
+        }
+        else if (addr == 0x4017 && m_Controller) {
+            return m_Controller->Read(1); // 读取控制器2
+        }
         // 暂时只处理PPU的OAM DMA寄存器 (0x4014)
-        if (addr == 0x4014 && m_Ppu)
+        else if (addr == 0x4014 && m_Ppu)
         {
             return 0; // OAM DMA寄存器只能写入，不能读取
         }
@@ -114,8 +132,12 @@ void MemoryMap::Write(uint16_t addr, uint8_t data)
     // APU和I/O寄存器 ($4000-$401F)
     else if (addr < 0x4020)
     {
+        // 处理控制器写入
+        if (addr == 0x4016 && m_Controller) {
+            m_Controller->Write(data); // 控制器strobe
+        }
         // 处理PPU的OAM DMA寄存器 (0x4014)
-        if (addr == 0x4014 && m_Ppu)
+        else if (addr == 0x4014 && m_Ppu)
         {
             m_Ppu->WriteRegister(0x4014, data);
         }
