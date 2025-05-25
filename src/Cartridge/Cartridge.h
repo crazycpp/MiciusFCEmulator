@@ -27,6 +27,10 @@ public:
     const uint8_t* GetChrMemory() const { return m_ChrMemory.data(); }
     size_t GetChrMemorySize() const { return m_ChrMemory.size(); }
     
+    // CHR-RAM写入支持
+    void WriteChrMemory(uint16_t addr, uint8_t data);
+    bool IsChrRam() const { return m_chrIsRam; }
+    
     // 获取镜像模式
     bool GetVerticalMirroring() const { return m_VerticalMirror; }
 
@@ -42,6 +46,7 @@ private:
     std::vector<uint8_t> m_PrgMemory;
     int m_ChrRomSize = 0;
     std::vector<uint8_t> m_ChrMemory;
+    bool m_chrIsRam = false;  // 标识是否为CHR-RAM
     bool m_VerticalMirror = false;
     uint8_t m_Mapper = 0;
 

@@ -73,14 +73,37 @@ bool Cartridge::CheckRomHeader(const std::vector<uint8_t>& romData)
 void Cartridge::LoadRomData(const std::vector<uint8_t>& romData)
 {
     m_PrgMemory.resize(m_PrgRomSize * 16 * 1024);
-    m_ChrMemory.resize(m_ChrRomSize * 8 * 1024);
+    
+    // 处理CHR内存：CHR ROM大小为0表示使用CHR-RAM
+    if (m_ChrRomSize == 0) {
+        // CHR-RAM: 分配8KB的可写内存
+        m_chrIsRam = true;
+        m_ChrMemory.resize(0x2000);  // 8 KiB CHR-RAM
+        // 初始化为0（这很重要，因为测试ROM会依赖初始状态）
+        std::fill(m_ChrMemory.begin(), m_ChrMemory.end(), 0);
+    } else {
+        // CHR-ROM: 从文件加载只读数据
+        m_chrIsRam = false;
+        m_ChrMemory.resize(m_ChrRomSize * 8 * 1024);
+    }
 
     auto prgRomBegin = romData.begin() + 16;
 
     // load PRG ROM
     std::copy(prgRomBegin, prgRomBegin + m_PrgMemory.size(), m_PrgMemory.begin());
 
-    // load CHR ROM
-    auto chrRomBegin = prgRomBegin + m_PrgMemory.size();
-    std::copy(chrRomBegin, chrRomBegin + m_ChrMemory.size(), m_ChrMemory.begin());
+    // load CHR ROM (只有当不是CHR-RAM时才从文件加载)
+    if (!m_chrIsRam && m_ChrMemory.size() > 0) {
+        auto chrRomBegin = prgRomBegin + m_PrgMemory.size();
+        std::copy(chrRomBegin, chrRomBegin + m_ChrMemory.size(), m_ChrMemory.begin());
+    }
+}
+
+void Cartridge::WriteChrMemory(uint16_t addr, uint8_t data)
+{
+    if (m_chrIsRam && !m_ChrMemory.empty()) {
+        // 8 KiB CHR-RAM地址环绕
+        m_ChrMemory[addr & 0x1FFF] = data;
+    }
+    // CHR-ROM情况下什么都不做（只读）
 }

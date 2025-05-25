@@ -113,6 +113,14 @@ int main(int argc, char *argv[])
         return -1;
     }
 
+    // 启用VSync以获得准确的60FPS
+    if (!SDL_SetRenderVSync(renderer, 1)) {
+        SDL_Log("VSync enabled successfully");
+    } else {
+        SDL_Log("Warning: Could not enable VSync: %s", SDL_GetError());
+        SDL_Log("Will use software timing instead");
+    }
+
     // 打印手柄信息
     SDL_JoystickID *joysticks;
     int joystick_count = 0;
@@ -135,7 +143,7 @@ int main(int argc, char *argv[])
     Emulator emulator;
     
     // 默认加载Donkey Kong ROM
-    std::string romPath = "roms/Balloon_fight.nes";
+    std::string romPath = "roms/ppu_vbl_nmi.nes";
     if (argc >= 2) {
         romPath = argv[1]; // 如果提供了命令行参数，则使用它作为ROM路径
     }
@@ -157,10 +165,22 @@ int main(int argc, char *argv[])
     bool running = true;
     SDL_Event event;
     uint64_t lastTime = SDL_GetTicks();
-    const double frameTime = 1000.0 / 60.0; // 目标60FPS
+    const double targetFrameTime = 1000.0 / 60.0; // 目标60FPS，每帧16.67毫秒
+    double accumulator = 0.0; // 时间累积器
     
     while (running)
     {
+        uint64_t currentTime = SDL_GetTicks();
+        double deltaTime = currentTime - lastTime;
+        lastTime = currentTime;
+        
+        // 限制最大帧时间，避免螺旋死亡
+        if (deltaTime > 50.0) {
+            deltaTime = 50.0;
+        }
+        
+        accumulator += deltaTime;
+        
         while (SDL_PollEvent(&event))
         {
             if (event.type == SDL_EVENT_QUIT)
@@ -177,13 +197,10 @@ int main(int argc, char *argv[])
             }
         }
 
-        // 计算帧率控制
-        uint64_t currentTime = SDL_GetTicks();
-        double elapsed = currentTime - lastTime;
-        
-        if (elapsed >= frameTime)
+        // 当累积时间达到一帧时间时，渲染一帧
+        if (accumulator >= targetFrameTime)
         {
-            lastTime = currentTime;
+            accumulator -= targetFrameTime;
             
             // 清屏
             SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
@@ -198,8 +215,11 @@ int main(int argc, char *argv[])
         }
         else
         {
-            // 如果时间不足一帧，让CPU休息一下以减少资源占用
-            SDL_Delay(1);
+            // 如果时间不足一帧，精确延迟剩余时间
+            double remainingTime = targetFrameTime - accumulator;
+            if (remainingTime > 1.0) {
+                SDL_Delay((uint32_t)(remainingTime - 1.0)); // 保留1ms缓冲
+            }
         }
     }
 

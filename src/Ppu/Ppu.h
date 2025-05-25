@@ -59,6 +59,12 @@ public:
     // 清除NMI标志
     void ClearNMI();
     
+    // 检查帧是否完成
+    bool FrameComplete() const { return m_FrameComplete; }
+    
+    // 清除帧完成标志
+    void ClearFrameComplete() { m_FrameComplete = false; }
+    
     // 清除并填充OAM内存
     void FillOAM(uint8_t value);
     
@@ -91,6 +97,12 @@ private:
     uint8_t m_ScrollX;      // X滚动位置
     uint8_t m_ScrollY;      // Y滚动位置
     uint16_t m_TempAddr;    // 临时地址寄存器
+    
+    // 更准确的PPU内部寄存器（用于卷轴处理）
+    uint16_t m_VramAddr;    // 当前VRAM地址寄存器 (v)
+    uint16_t m_TempVramAddr; // 临时VRAM地址寄存器 (t)
+    uint8_t m_FineX;        // 精细X滚动 (x, 0-7)
+    bool m_WriteToggle;     // 写入切换标志 (w)
 
     // PPU内部内存
     std::array<uint8_t, 0x800> m_VRAM;     // 2KB VRAM (Nametables)
@@ -113,6 +125,9 @@ private:
     bool m_NMIEnabled;      // NMI启用标志
     bool m_NMIOccurred;
     
+    // Sprite-0 Hit状态跟踪
+    bool m_Sprite0HitThisFrame;  // 当前帧是否已经触发过Sprite-0 Hit
+    
     // 内部状态
     bool m_VerticalMirroring; // 从卡带获取的镜像模式
 
@@ -121,4 +136,7 @@ private:
 
     // NES系统调色板 (RGB颜色值)
     static const uint32_t SYSTEM_PALETTE[64];
+
+    // 帧完成标志
+    bool m_FrameComplete;
 }; 

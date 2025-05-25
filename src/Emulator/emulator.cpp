@@ -126,14 +126,9 @@ void Emulator::RenderFrame(SDL_Renderer* renderer)
     // 更新控制器状态
     m_MemoryMap->UpdateController();
     
-    // 首先，运行足够的周期来生成一帧
-    const int cyclesPerFrame = 29780;  // NTSC规格下一帧约为29780个CPU周期
-    
-    // 设置计数器以检测当前帧是否已完成
-    int frameCycles = 0;
-    
-    // 运行直到完成一帧
-    while (frameCycles < cyclesPerFrame) {
+    // 运行直到PPU完成一帧（让PPU自己决定帧的长度）
+    // 这样可以正确处理NTSC的偶帧29780周期、奇帧29781周期
+    while (!m_Ppu->FrameComplete()) {
         uint8_t cpuCycles = m_Cpu->Step();
         
         // 执行PPU周期
@@ -146,10 +141,11 @@ void Emulator::RenderFrame(SDL_Renderer* renderer)
             m_Cpu->TriggerNMI();
             m_Ppu->ClearNMI();
         }
-        
-        frameCycles += cpuCycles;
     }
     
     // 渲染当前帧
     m_Ppu->Render(renderer);
+    
+    // 清除帧完成标志，准备下一帧
+    m_Ppu->ClearFrameComplete();
 }
