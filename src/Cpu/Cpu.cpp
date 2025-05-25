@@ -17,7 +17,7 @@
 #include <iostream>
 #include <iomanip>
 
-CPU::CPU(Memory &memory) : memory(memory), cycles(0), nmiPending(false), irqPending(false)
+CPU::CPU(Memory &memory) : memory(memory), cycles(0), nmiPending(false), irqPending(false), cyclesLeft(0)
 {
     Reset();
     InitAddressingModes();
@@ -40,6 +40,7 @@ void CPU::Reset()
     cycles = 7; // Initialize to 7 to match nestest.log
     nmiPending = false;
     irqPending = false;
+    cyclesLeft = 0;  // 初始化周期计数
 }
 
 void CPU::InitAddressingModes()
@@ -430,6 +431,43 @@ uint8_t CPU::Step()
 
 
     return cycleCount;
+}
+
+void CPU::Tick()
+{
+    // 推进一个CPU周期
+    if (cyclesLeft > 0) {
+        cyclesLeft--;
+        cycles++;
+    }
+}
+
+void CPU::FetchAndExecute()
+{
+    // 处理中断（在指令fetch之前）
+    if (nmiPending) {
+        HandleNMI();
+        nmiPending = false;
+        cyclesLeft = 7; // NMI takes 7 cycles
+        return;
+    }
+
+    if (irqPending && !registers.flags.I) {
+        HandleIRQ();
+        irqPending = false;
+        cyclesLeft = 7; // IRQ takes 7 cycles
+        return;
+    }
+
+    // 获取操作码
+    uint8_t opcode = FetchByte();
+
+    // 获取并执行指令
+    auto &instruction = instructionTable[opcode];
+    instruction->Execute(*this);
+    
+    // 设置指令的周期数
+    cyclesLeft = instruction->Cycles();
 }
 
 void CPU::TriggerNMI()
@@ -1085,6 +1123,9 @@ std::string CPU::DisassembleInstruction(uint8_t opcode, uint8_t param1, uint8_t 
 // 中断处理
 void CPU::HandleNMI()
 {
+    // 调试输出：验证NMI触发时机
+    // std::cout << "[NMI] Triggered at PC=" << std::hex << registers.PC << "  cycles=" << std::dec << cycles << std::endl;
+    
     Push((registers.PC >> 8) & 0xFF);
     Push(registers.PC & 0xFF);
 

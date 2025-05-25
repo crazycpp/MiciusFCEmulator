@@ -40,19 +40,27 @@ void Emulator::Reset()
 
 void Emulator::Step()
 {
-    // 检查PPU是否触发NMI
-    if (m_Ppu->CheckNMI()) {
-        m_Cpu->TriggerNMI();
-        m_Ppu->ClearNMI();
+    // 如果CPU没有正在执行的指令，获取下一条指令
+    if (m_Cpu->CyclesLeft() == 0) {
+        // 获取并设置下一条指令（不执行额外的PPU周期）
+        m_Cpu->FetchAndExecute();
     }
     
-    // 执行一个CPU周期
-    uint8_t cycles = m_Cpu->Step();
-    
-    // 每个CPU周期执行3个PPU周期(NTSC)
-    for (int i = 0; i < cycles * 3; i++) {
+    // 每个CPU周期严格对应3个PPU周期
+    // PPU必须在CPU之前执行，以匹配真实硬件时序
+    for (int i = 0; i < 3; i++) {
         m_Ppu->Step();
+        
+        // 检查NMI是否触发
+        if (m_Ppu->CheckNMI()) {
+            m_Cpu->TriggerNMI();
+            // 清除PPU的NMI状态，防止重复触发
+            m_Ppu->ClearNMI();
+        }
     }
+    
+    // 推进一个CPU周期（在PPU之后执行）
+    m_Cpu->Tick();
 }
 
 void Emulator::DumpCpuState() const
@@ -129,18 +137,27 @@ void Emulator::RenderFrame(SDL_Renderer* renderer)
     // 运行直到PPU完成一帧（让PPU自己决定帧的长度）
     // 这样可以正确处理NTSC的偶帧29780周期、奇帧29781周期
     while (!m_Ppu->FrameComplete()) {
-        uint8_t cpuCycles = m_Cpu->Step();
+        // 如果CPU没有正在执行的指令，获取下一条指令
+        if (m_Cpu->CyclesLeft() == 0) {
+            // 获取并设置下一条指令（不执行额外的PPU周期）
+            m_Cpu->FetchAndExecute();
+        }
         
-        // 执行PPU周期
-        for (int i = 0; i < cpuCycles * 3; i++) {
+        // 每个CPU周期严格对应3个PPU周期
+        // PPU必须在CPU之前执行，以匹配真实硬件时序
+        for (int i = 0; i < 3; i++) {
             m_Ppu->Step();
+            
+            // 检查NMI是否触发
+            if (m_Ppu->CheckNMI()) {
+                m_Cpu->TriggerNMI();
+                // 清除PPU的NMI状态，防止重复触发
+                m_Ppu->ClearNMI();
+            }
         }
         
-        // 检查是否触发了NMI
-        if (m_Ppu->CheckNMI()) {
-            m_Cpu->TriggerNMI();
-            m_Ppu->ClearNMI();
-        }
+        // 推进一个CPU周期（在PPU之后执行）
+        m_Cpu->Tick();
     }
     
     // 渲染当前帧

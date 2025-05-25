@@ -22,6 +22,11 @@ public:
     // 执行一条指令并返回消耗的周期数
     uint8_t Step();
 
+    // 周期级别控制方法（用于精确时序模拟）
+    uint8_t CyclesLeft() const { return cyclesLeft; }
+    void Tick();  // 推进一个CPU周期
+    void FetchAndExecute();  // 获取并设置下一条指令的执行
+
     // NMI/IRQ中断处理
     void TriggerNMI();
     void TriggerIRQ();
@@ -126,6 +131,9 @@ private:
     // 中断状态
     bool nmiPending;
     bool irqPending;
+
+    // 周期级别控制
+    uint8_t cyclesLeft;
 
     // 指令表 - 改为直接注入寻址模式的设计
     std::array<std::unique_ptr<Instruction>, 256> instructionTable;
