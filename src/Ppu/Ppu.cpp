@@ -23,13 +23,19 @@
         m_VramAddr(0), m_TempVramAddr(0), m_FineX(0), m_WriteToggle(false),
         m_Cycle(0), m_ScanLine(261), m_FrameCount(0),  // 从预渲染扫描线开始 (261)
         m_NMIEnabled(false), m_NMIOccurred(false), m_Sprite0HitThisFrame(false),
-        m_VerticalMirroring(true), m_Texture(nullptr), m_FrameComplete(false)
+        m_VerticalMirroring(true), m_Texture(nullptr), m_FrameComplete(false),
+        m_DecayRegister(0), m_CycleCount(0)
     {
         // 初始化内存
         m_VRAM.fill(0);
         m_OAM.fill(0xFF);  // OAM初始化为0xFF
         m_Palette.fill(0);
         m_FrameBuffer.fill(0);
+        
+        // 初始化衰减时间戳
+        for (int i = 0; i < 8; i++) {
+            m_DecayTimestamp[i] = 0;
+        }
         
         // 初始化调色板 - 这对正确显示初始屏幕很重要
         for (int i = 0; i < 32; i += 4) {
@@ -94,25 +100,67 @@
 
     uint8_t PPU::ReadRegister(uint16_t reg)
     {
+        uint8_t result = 0;
+        
         // 处理PPU寄存器(0x2000-0x2007)及其在$2000-$3FFF范围内的镜像
         switch (reg & 0x0007) {
+            case 0x0000: // PPUCTRL - 只写寄存器，返回衰减寄存器值
+                result = GetDecayRegister();
+                break;
+                
+            case 0x0001: // PPUMASK - 只写寄存器，返回衰减寄存器值
+                result = GetDecayRegister();
+                break;
+                
             case 0x0002: { // PPUSTATUS
                 // 读取状态寄存器
                 uint8_t status = m_Status;
+                
+                // 根据open-bus规则：$2002的bits 4-0来自衰减寄存器，bits 7-5来自PPU状态
+                uint8_t decay = GetDecayRegister();
+                result = (status & 0xE0) | (decay & 0x1F);
+                
+                // 刷新衰减寄存器的bits 7-5
+                RefreshDecayBit(7, status);
+                RefreshDecayBit(6, status);
+                RefreshDecayBit(5, status);
+                
                 // 清除垂直空白标志 (bit 7)
-                // 注意：Sprite-0 Hit (bit 6) 和 Sprite Overflow (bit 5) 标志
-                // 只在预渲染扫描线被清除，读取$2002不会清除它们
                 m_Status &= ~0x80;
-                // 清除NMI pending状态 - 这是NES真机的行为
+                // 清除NMI pending状态
                 m_NMIOccurred = false;
                 // 重置地址锁存器和写入切换标志
                 m_AddressLatch = false;
                 m_WriteToggle = false;
-                return status;
+                break;
             }
+            
+            case 0x0003: // OAMADDR - 只写寄存器，返回衰减寄存器值
+                result = GetDecayRegister();
+                break;
+                
             case 0x0004: // OAMDATA
-                // 读取OAM数据 (注意：这里不会自动增加OAM地址)
-                return m_OAM[m_OamAddr];
+                // 读取OAM数据，刷新整个衰减寄存器
+                result = m_OAM[m_OamAddr];
+                
+                // 根据NES硬件规范：精灵属性字节的bits 2-4在读取时应该总是清零
+                // OAM结构：每4字节一个精灵 [Y, Tile, Attributes, X]
+                // 属性字节是每个精灵的第3个字节（索引 % 4 == 2）
+                if ((m_OamAddr & 0x03) == 2) {
+                    result &= 0xE3; // 清除bits 2-4 (保留bits 7,6,5,1,0)
+                }
+                
+                RefreshDecayRegister(result);
+                break;
+                
+            case 0x0005: // PPUSCROLL - 只写寄存器，返回衰减寄存器值
+                result = GetDecayRegister();
+                break;
+                
+            case 0x0006: // PPUADDR - 只写寄存器，返回衰减寄存器值
+                result = GetDecayRegister();
+                break;
+                
             case 0x0007: { // PPUDATA
                 // 读取PPU数据
                 uint8_t data = 0;
@@ -120,25 +168,36 @@
                 // 调色板数据立即返回
                 if (m_PpuAddr >= 0x3F00 && m_PpuAddr <= 0x3FFF) {
                     data = Read(m_PpuAddr);
+                    // 调色板读取：bits 7-6来自衰减寄存器，bits 5-0来自调色板数据
+                    uint8_t decay = GetDecayRegister();
+                    result = (decay & 0xC0) | (data & 0x3F);
+                    // 刷新衰减寄存器的bits 5-0
+                    for (int i = 0; i < 6; i++) {
+                        RefreshDecayBit(i, data);
+                    }
                 } else {
                     // 非调色板数据有一个周期的延迟，返回缓冲区的值
                     data = m_PpuData;
                     m_PpuData = Read(m_PpuAddr);
+                    result = data;
+                    // 刷新整个衰减寄存器
+                    RefreshDecayRegister(result);
                 }
                 
                 // 地址自增 (根据PPUCTRL第2位决定增量)
                 m_PpuAddr += (m_Control & 0x04) ? 32 : 1;
-                
-                return data;
+                break;
             }
-            // 其他寄存器不可读或返回最后一次读取的值
-            default:
-                return 0;
         }
+        
+        return result;
     }
 
     void PPU::WriteRegister(uint16_t reg, uint8_t data)
     {
+        // 写入任何PPU寄存器都会刷新整个衰减寄存器
+        RefreshDecayRegister(data);
+        
         // 特殊处理OAMDMA寄存器，它位于0x4014而不是PPU寄存器范围内
         if (reg == 0x4014) {
             DoOAMDMA(data);
@@ -245,7 +304,22 @@
                 size_t chrSize = m_Cartridge->GetChrMemorySize();
                 if (chrSize > 0) {
                     // 8KB CHR内存地址环绕
-                    return chrData[addr & 0x1FFF];
+                    uint16_t chrAddr = addr & 0x1FFF;
+                    uint8_t value = chrData[chrAddr];
+                    
+                    // 添加调试：在特定地址范围内显示CHR读取
+                    if ((addr >= 0x1010 && addr <= 0x1017) || (addr >= 0x1240 && addr <= 0x1247) || (addr >= 0x1280 && addr <= 0x1287)) {
+                        static int debugCount = 0;
+                        if (debugCount < 20) {  // 限制输出次数
+                            std::cout << "[CHR Read] Addr=0x" << std::hex << addr 
+                                      << " ChrAddr=0x" << chrAddr 
+                                      << " Value=0x" << int(value) 
+                                      << " ChrSize=" << std::dec << chrSize << std::endl;
+                            debugCount++;
+                        }
+                    }
+                    
+                    return value;
                 }
             }
             return 0;
@@ -357,6 +431,9 @@
 
     void PPU::Step()
     {
+        // 增加总周期计数，用于衰减寄存器计时
+        m_CycleCount++;
+        
         // PPU时钟周期逻辑
         // NTSC PPU: 341 cycles per scanline, 262 scanlines per frame (0-261)
         
@@ -380,25 +457,16 @@
             m_Sprite0HitThisFrame = false;
             // 重置NMI状态，准备下一帧
             m_NMIOccurred = false;
+            
+            // 在预渲染扫描线开始时，复制临时VRAM地址到当前VRAM地址
+            // 这是NES真机的行为：在渲染开始时加载滚动设置
+            if ((m_Mask & 0x18) != 0) {  // 如果背景或精灵渲染启用
+                m_VramAddr = m_TempVramAddr;
+            }
         }
         
         // 处理可见区域的像素渲染 (0-239行, 0-255列)
         if (m_ScanLine < 240 && m_Cycle < 256) {
-            // 添加调试：检查扫描线238-239的渲染
-            if (m_ScanLine >= 238) {
-                static int lastScanline = -1;
-                static int cycleCount = 0;
-                if (lastScanline != m_ScanLine) {
-                    if (lastScanline >= 238) {
-                        std::cout << "[DEBUG] Scanline " << lastScanline << " rendered " << cycleCount << " cycles" << std::endl;
-                    }
-                    lastScanline = m_ScanLine;
-                    cycleCount = 0;
-                    std::cout << "[DEBUG] Starting scanline " << m_ScanLine 
-                              << " PPUMASK=" << std::hex << int(m_Mask) << std::dec << std::endl;
-                }
-                cycleCount++;
-            }
             RenderPixel();
         }
         
@@ -433,8 +501,6 @@
     void PPU::RenderPixel()
     {
         // 获取当前像素坐标
-        // 根据NESdev Wiki: "Sprite 0 hit acts as if the image starts at cycle 2"
-        // 但实际像素输出从cycle 4开始，我们需要正确映射坐标
         int x = m_Cycle;
         int y = m_ScanLine;
         
@@ -455,92 +521,74 @@
                 // 左侧8像素剪裁检查
                 bool showLeftBackground = (m_Mask & 0x02) != 0;
                 if (showLeftBackground || x >= 8) {
-                    // 使用更稳定的卷轴计算
-                    // 考虑PPUCTRL中的基础nametable选择
-                    int baseNametableX = (m_Control & 0x01) ? 256 : 0;
-                    int baseNametableY = (m_Control & 0x02) ? 240 : 0;
-                    
-                    // 计算实际的滚动位置
-                    int actualScrollX = (x + m_ScrollX + baseNametableX) % 512;
-                    int actualScrollY = (y + m_ScrollY + baseNametableY) % 480;
-                    
-                    // 添加调试：在Sprite-0位置显示滚动计算
-                    if (x >= 88 && x <= 95 && y == 31) {
-                        static bool logged = false;
-                        if (!logged) {
-                            std::cout << "[Scroll Info] ScrollX=" << int(m_ScrollX) << " ScrollY=" << int(m_ScrollY) 
-                                      << " PPUCTRL=" << std::hex << int(m_Control) << std::dec << std::endl;
-                            std::cout << "[Scroll Calc] ActualScrollX=" << actualScrollX << " ActualScrollY=" << actualScrollY
-                                      << " TileX=" << (actualScrollX / 8) % 32 << " TileY=" << (actualScrollY / 8) % 30 << std::endl;
-                            logged = true;
-                        }
-                    }
-                    
-                    // 计算tile坐标 - 确保在nametable范围内
-                    int tileX = (actualScrollX / 8) % 32;  // 每个nametable是32个tile宽
-                    int tileY = (actualScrollY / 8) % 30;  // 每个nametable是30个tile高
+                    // 暂时回到简单滚动系统，专注解决CHR数据问题
+                    int scrolledX = (x + m_ScrollX) & 0x1FF;  // 512像素环绕
+                    int scrolledY = (y + m_ScrollY) & 0x1FF;  // 512像素环绕
                     
                     // 计算nametable索引
                     int nametableIndex = 0;
-                    if (actualScrollX >= 256) nametableIndex |= 0x01;
-                    if (actualScrollY >= 240) nametableIndex |= 0x02;
+                    if (scrolledX >= 256) nametableIndex |= 0x01;
+                    if (scrolledY >= 240) nametableIndex |= 0x02;
+                    
+                    // 应用PPUCTRL的nametable选择
+                    nametableIndex ^= (m_Control & 0x03);
+                    
+                    // 计算tile坐标
+                    int tileX = (scrolledX % 256) / 8;
+                    int tileY = (scrolledY % 240) / 8;
                     
                     // 计算nametable地址
                     uint16_t nametableAddr = 0x2000 + nametableIndex * 0x400;
                     
-                    // 获取tile索引 - 确保地址在有效范围内
+                    // 获取tile索引 - 确保坐标在有效范围内
+                    if (tileX >= 32) tileX = 31;
+                    if (tileY >= 30) tileY = 29;
                     uint16_t tileIndexAddr = nametableAddr + (tileY * 32 + tileX);
                     uint8_t tileIndex = Read(tileIndexAddr);
                     
-                    // 添加调试：在Sprite-0位置显示tile信息
-                    if (x >= 88 && x <= 95 && y == 31) {
-                        // 移除详细tile调试，太多输出
-                        // std::cout << "[Tile Debug] TileX=" << tileX << " TileY=" << tileY 
-                        //           << " NTIndex=" << nametableIndex << " NTAddr=0x" << std::hex << nametableAddr
-                        //           << " TileIndexAddr=0x" << tileIndexAddr << " TileIndex=0x" << int(tileIndex) << std::dec << std::endl;
-                    }
-                    
                     // 获取属性表数据 - 确保坐标在有效范围内
-                    uint16_t attributeAddr = nametableAddr + 0x3C0 + (tileY / 4) * 8 + (tileX / 4);
+                    int attrX = tileX / 4;
+                    int attrY = tileY / 4;
+                    if (attrX >= 8) attrX = 7;
+                    if (attrY >= 8) attrY = 7;
+                    uint16_t attributeAddr = nametableAddr + 0x3C0 + (attrY * 8 + attrX);
                     uint8_t attributeData = Read(attributeAddr);
                     
-                    // 确定调色板 (根据quadrant)
-                    int shift = ((tileY & 0x02) << 1) | (tileX & 0x02);  // 0,2,4,6
+                    // 确定调色板 - 修复quadrant计算
+                    int quadrantX = (tileX % 4) / 2;  // 0 or 1
+                    int quadrantY = (tileY % 4) / 2;  // 0 or 1
+                    int shift = (quadrantY * 2 + quadrantX) * 2;  // 0, 2, 4, 6
                     uint8_t paletteIndex = (attributeData >> shift) & 0x03;
                     
-                    // 计算patternTable中的位置 (PPUCTRL的bit 4控制背景pattern表)
+                    // 计算pattern table地址
                     uint16_t patternTableAddr = ((m_Control & 0x10) ? 0x1000 : 0) + (tileIndex * 16);
                     
                     // 获取tile内的像素坐标
-                    int pixelX = actualScrollX % 8;
-                    int pixelY = actualScrollY % 8;
+                    int pixelX = scrolledX % 8;
+                    int pixelY = scrolledY % 8;
                     
                     // 获取tile pattern数据
-                    uint8_t patternLow = Read(patternTableAddr + pixelY);
-                    uint8_t patternHigh = Read(patternTableAddr + pixelY + 8);
+                    uint8_t patternLow = 0;
+                    uint8_t patternHigh = 0;
                     
-                    // 添加调试：在Sprite-0位置显示pattern信息
-                    if (x >= 88 && x <= 95 && y == 31) {
-                        // 移除详细pattern调试，太多输出
-                        // std::cout << "[Pattern Debug] PatternTableAddr=0x" << std::hex << patternTableAddr 
-                        //           << " PixelX=" << std::dec << pixelX << " PixelY=" << pixelY
-                        //           << " PatternLow=0x" << std::hex << int(patternLow) 
-                        //           << " PatternHigh=0x" << int(patternHigh) << std::dec << std::endl;
+                    // 直接从CHR内存读取，避免PPU Read方法的潜在问题
+                    if (m_Cartridge) {
+                        const uint8_t* chrData = m_Cartridge->GetChrMemory();
+                        size_t chrSize = m_Cartridge->GetChrMemorySize();
+                        if (chrData && chrSize > 0) {
+                            uint16_t chrAddr1 = (patternTableAddr + pixelY) & 0x1FFF;
+                            uint16_t chrAddr2 = (patternTableAddr + pixelY + 8) & 0x1FFF;
+                            
+                            if (chrAddr1 < chrSize) patternLow = chrData[chrAddr1];
+                            if (chrAddr2 < chrSize) patternHigh = chrData[chrAddr2];
+                        }
                     }
                     
                     // 提取该像素的颜色位
-                    uint8_t bitPos = 7 - pixelX;  // 从左到右的位顺序 (7,6,5,4,3,2,1,0)
+                    uint8_t bitPos = 7 - pixelX;
                     uint8_t lowBit = (patternLow >> bitPos) & 1;
                     uint8_t highBit = (patternHigh >> bitPos) & 1;
                     uint8_t colorBits = (highBit << 1) | lowBit;
-                    
-                    // 添加调试：在Sprite-0位置显示颜色位计算
-                    if (x >= 88 && x <= 95 && y == 31) {
-                        // 移除详细color调试，太多输出
-                        // std::cout << "[Color Debug] BitPos=" << int(bitPos) 
-                        //           << " LowBit=" << int(lowBit) << " HighBit=" << int(highBit)
-                        //           << " ColorBits=" << int(colorBits) << " PaletteIdx=" << int(paletteIndex) << std::endl;
-                    }
                     
                     // 如果颜色不为0，则背景不透明
                     if (colorBits != 0) {
@@ -548,20 +596,6 @@
                         // 计算最终调色板颜色 (背景palette: $3F00-$3F0F)
                         uint8_t bgPaletteColor = Read(0x3F00 + (paletteIndex * 4) + colorBits);
                         finalColor = SYSTEM_PALETTE[bgPaletteColor & 0x3F];
-                        
-                        // 添加调试：在Sprite-0区域显示背景状态
-                        if (x >= 128 && x <= 135 && y == 239) {
-                            // 移除详细背景调试，太多输出
-                            // std::cout << "[BG Debug] X=" << x << " ColorBits=" << int(colorBits) 
-                            //           << " PaletteIdx=" << int(paletteIndex) << " BgOpaque=Yes" << std::endl;
-                        }
-                    } else {
-                        // 添加调试：在Sprite-0区域显示背景透明状态
-                        if (x >= 128 && x <= 135 && y == 239) {
-                            // 移除详细背景调试，太多输出
-                            // std::cout << "[BG Debug] X=" << x << " ColorBits=" << int(colorBits) 
-                            //           << " BgOpaque=No (Transparent)" << std::endl;
-                        }
                     }
                 }
             }
@@ -593,17 +627,6 @@
                 for (int i = 0; i < 64 && visibleCount < 8; i++) {
                     uint8_t spriteY = m_OAM[i * 4 + 0];
                     
-                    // 添加调试：检查Sprite 0的OAM数据
-                    if (i == 0 && m_FrameCount < 10) {  // 增加到前10帧
-                        static int lastFrame = -1;
-                        if (lastFrame != m_FrameCount) {
-                            std::cout << "[Sprite-0 OAM] Frame=" << m_FrameCount 
-                                      << " Y=" << int(spriteY) << " Tile=" << int(m_OAM[i * 4 + 1])
-                                      << " Attr=" << int(m_OAM[i * 4 + 2]) << " X=" << int(m_OAM[i * 4 + 3]) << std::endl;
-                            lastFrame = m_FrameCount;
-                        }
-                    }
-                    
                     // NES精灵Y坐标规则：Y>=240(0xF0)表示精灵不可见
                     if (spriteY >= 0xF0) continue; // 无效精灵(Y >= 240)
                     
@@ -611,15 +634,6 @@
                     // NES精灵Y坐标：OAM Y值 + 1 才是屏幕实际位置
                     int yTop = spriteY + 1;  // 真机公式
                     int yBottom = yTop + spriteHeight - 1;  // 精灵底部位置
-                    
-                    // 添加调试：检查Sprite 0的Y坐标边界（扩大范围）
-                    if (i == 0 && y >= 230) {  // 扩大检查范围
-                        // std::cout << "[Sprite-0 Bounds] OAM_Y=" << int(spriteY) 
-                        //           << " yTop=" << yTop << " yBottom=" << yBottom 
-                        //           << " currentY=" << y << " height=" << spriteHeight 
-                        //           << " inRange=" << (y >= yTop && y < yTop + spriteHeight && y < 240 ? "Yes" : "No")
-                        //           << std::endl;
-                    }
                     
                     // 确保精灵不会渲染到扫描线240或更高
                     if (yTop >= 240) continue;  // 精灵完全在可见区域之外
@@ -636,14 +650,6 @@
                             visibleSprites[visibleCount].x = m_OAM[i * 4 + 3];
                             visibleSprites[visibleCount].visible = true;
                             visibleCount++;
-                            
-                            // 调试：记录Sprite-0被添加到可见列表
-                            if (i == 0) {
-                                // std::cout << "[Sprite-0 Visible] Scanline=" << y << " X=" << x 
-                                //           << " VisibleCount=" << visibleCount << std::endl;
-                                // std::cout << "[Sprite-0 Visible] Scanline=" << y << " X=" << x 
-                                //           << " VisibleCount=" << visibleCount << std::endl;
-                            }
                         }
                     }
                 }
@@ -662,15 +668,6 @@
                 // 从后往前检查精灵，先找到的（索引低的）优先
                 for (int s = 0; s < visibleCount; s++) {
                     SpriteData& sprite = visibleSprites[s];
-                    
-                    // 添加调试：显示Sprite-0的X坐标检查
-                    if (sprite.index == 0) {
-                        // 只在X坐标匹配时输出
-                        if (x >= sprite.x && x < sprite.x + 8) {
-                            std::cout << "[Sprite-0 X-Match] SpriteX=" << int(sprite.x) 
-                                      << " CurrentX=" << x << std::endl;
-                        }
-                    }
                     
                     // 检查X坐标是否匹配
                     if (x >= sprite.x && x < sprite.x + 8) {
@@ -710,15 +707,20 @@
                         }
                         
                         // 读取精灵pattern数据
-                        uint8_t patternLow = Read(patternAddr);
-                        uint8_t patternHigh = Read(patternAddr + 8);
+                        uint8_t patternLow = 0;
+                        uint8_t patternHigh = 0;
                         
-                        // 添加调试：显示Sprite-0的pattern数据
-                        if (sprite.index == 0) {
-                            // 移除详细pattern调试，太多输出
-                            // std::cout << "[Pattern Debug] PatternAddr=0x" << std::hex << patternAddr 
-                            //           << " Low=0x" << int(patternLow) << " High=0x" << int(patternHigh)
-                            //           << " XOffset=" << std::dec << xOffset << " YOffset=" << yOffset << std::endl;
+                        // 直接从CHR内存读取，避免PPU Read方法的潜在问题
+                        if (m_Cartridge) {
+                            const uint8_t* chrData = m_Cartridge->GetChrMemory();
+                            size_t chrSize = m_Cartridge->GetChrMemorySize();
+                            if (chrData && chrSize > 0) {
+                                uint16_t chrAddr1 = patternAddr & 0x1FFF;
+                                uint16_t chrAddr2 = (patternAddr + 8) & 0x1FFF;
+                                
+                                if (chrAddr1 < chrSize) patternLow = chrData[chrAddr1];
+                                if (chrAddr2 < chrSize) patternHigh = chrData[chrAddr2];
+                            }
                         }
                         
                         // 提取颜色位
@@ -727,13 +729,6 @@
                         uint8_t highBit = (patternHigh >> bitPos) & 1;
                         uint8_t colorBits = (highBit << 1) | lowBit;
                         
-                        // 添加调试：显示Sprite-0的颜色位
-                        if (sprite.index == 0) {
-                            // std::cout << "[Sprite-0 Color] BitPos=" << int(bitPos) 
-                            //           << " LowBit=" << int(lowBit) << " HighBit=" << int(highBit)
-                            //           << " ColorBits=" << int(colorBits) << " Opaque=" << (colorBits != 0 ? "Yes" : "No") << std::endl;
-                        }
-                        
                         // 精灵调色板使用属性的低2位
                         uint8_t spritePaletteIndex = sprite.attributes & 0x03;
                         
@@ -741,53 +736,20 @@
                         if (colorBits != 0) {
                             // 检查Sprite-0 Hit条件 - 基于NESdev Wiki的精确规则
                             if (sprite.index == 0 && !m_Sprite0HitThisFrame) {
-                                // 简化调试输出：只在关键时刻输出
-                                if (colorBits != 0) {  // 只有当精灵不透明时才输出
-                                    std::cout << "[Sprite-0] X=" << x << " Y=" << y
-                                              << " BgOpaque=" << (bgOpaque ? "Yes" : "No") << std::endl;
-                                }
-                                
                                 // 检查渲染是否启用 - Sprite-0 Hit需要背景和精灵渲染都启用
                                 bool backgroundEnabled = (m_Mask & 0x08) != 0;
                                 bool spritesEnabled = (m_Mask & 0x10) != 0;
                                 
-                                // 移除详细渲染状态调试
-                                // std::cout << "[Sprite-0 Render] BgEnabled=" << (backgroundEnabled ? "Yes" : "No")
-                                //           << " SpriteEnabled=" << (spritesEnabled ? "Yes" : "No")
-                                //           << " PPUMASK=" << std::hex << int(m_Mask) << std::dec << std::endl;
-                                
                                 // 检查左侧剪裁 - 根据NESdev Wiki的精确规则
-                                // PPUMASK bit 1: 显示左侧8像素的背景 (0=隐藏, 1=显示)
-                                // PPUMASK bit 2: 显示左侧8像素的精灵 (0=隐藏, 1=显示)
-                                // Sprite-0 Hit在x=0-7时不会触发，如果背景或精灵的左侧剪裁启用
                                 bool showLeftBackground = (m_Mask & 0x02) != 0;
                                 bool showLeftSprites = (m_Mask & 0x04) != 0;
                                 bool inClippedRegion = (x >= 0 && x <= 7) && (!showLeftBackground || !showLeftSprites);
                                 
-                                // 移除详细剪裁调试
-                                // std::cout << "[Sprite-0 Clip] ShowLeftBg=" << (showLeftBackground ? "Yes" : "No")
-                                //           << " ShowLeftSprite=" << (showLeftSprites ? "Yes" : "No")
-                                //           << " InClippedRegion=" << (inClippedRegion ? "Yes" : "No")
-                                //           << " X=" << x << std::endl;
-                                
-                                // 修改条件：测试ROM可能期望即使精灵渲染禁用也能检测Sprite-0 Hit
-                                // 只要背景渲染启用就尝试检测
-                                // 临时修复：在Super Mario Bros中，如果Sprite-0在特定位置且背景透明，仍然触发Hit
-                                bool isSupermarioWorkaround = (x >= 88 && x <= 95 && (y == 30 || y == 31));
-                                if (backgroundEnabled && !inClippedRegion && x != 255 && (bgOpaque || isSupermarioWorkaround)) {
+                                // 正常的Sprite-0 Hit检测
+                                if (backgroundEnabled && !inClippedRegion && x != 255 && bgOpaque && colorBits != 0) {
                                     // Sprite 0与背景碰撞
                                     m_Status |= 0x40; // 设置sprite 0 hit标志
                                     m_Sprite0HitThisFrame = true;  // 标记本帧已触发
-                                    
-                                    std::cout << "[Sprite-0 HIT!] Frame=" << m_FrameCount 
-                                              << " Scanline=" << m_ScanLine << " X=" << x 
-                                              << " Cycle=" << m_Cycle 
-                                              << (isSupermarioWorkaround ? " (Workaround)" : "") << std::endl;
-                                } else {
-                                    // 只在背景透明时输出原因
-                                    if (colorBits != 0 && !bgOpaque && !isSupermarioWorkaround) {
-                                        std::cout << "[Sprite-0 NO HIT] BgTransparent at X=" << x << " Y=" << y << std::endl;
-                                    }
                                 }
                             }
                             
@@ -859,4 +821,40 @@
     {
         m_OAM.fill(value);
         m_OamAddr = 0;
+    }
+
+    // 衰减寄存器实现
+    void PPU::RefreshDecayBit(int bit, uint8_t value)
+    {
+        if (bit >= 0 && bit < 8) {
+            if (value & (1 << bit)) {
+                m_DecayRegister |= (1 << bit);
+            } else {
+                m_DecayRegister &= ~(1 << bit);
+            }
+            m_DecayTimestamp[bit] = m_CycleCount;
+        }
+    }
+
+    void PPU::RefreshDecayRegister(uint8_t value)
+    {
+        m_DecayRegister = value;
+        for (int i = 0; i < 8; i++) {
+            m_DecayTimestamp[i] = m_CycleCount;
+        }
+    }
+
+    uint8_t PPU::GetDecayRegister()
+    {
+        // 衰减时间约为600毫秒 = 600ms * 1.79MHz ≈ 1,074,000 cycles
+        // 为了简化，我们使用一个较小的值进行测试
+        const uint64_t DECAY_CYCLES = 1000000; // 约558ms at 1.79MHz
+        
+        uint8_t result = m_DecayRegister;
+        for (int i = 0; i < 8; i++) {
+            if (m_CycleCount - m_DecayTimestamp[i] > DECAY_CYCLES) {
+                result &= ~(1 << i); // 衰减到0
+            }
+        }
+        return result;
     } 

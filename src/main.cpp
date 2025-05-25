@@ -143,7 +143,7 @@ int main(int argc, char *argv[])
     Emulator emulator;
     
     // 默认加载Donkey Kong ROM
-    std::string romPath = "roms/Super_mario_brothers.nes";
+    std::string romPath = "roms/ppu_open_bus.nes";
     if (argc >= 2) {
         romPath = argv[1]; // 如果提供了命令行参数，则使用它作为ROM路径
     }

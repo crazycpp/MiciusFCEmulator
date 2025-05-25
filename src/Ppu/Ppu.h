@@ -139,4 +139,14 @@ private:
 
     // 帧完成标志
     bool m_FrameComplete;
+    
+    // PPU Open-Bus / Decay Register
+    uint8_t m_DecayRegister;        // PPU衰减寄存器
+    uint64_t m_DecayTimestamp[8];   // 每个位的最后刷新时间戳
+    uint64_t m_CycleCount;          // 总周期计数，用于衰减计时
+    
+    // 衰减寄存器辅助函数
+    void RefreshDecayBit(int bit, uint8_t value);  // 刷新特定位
+    void RefreshDecayRegister(uint8_t value);      // 刷新整个寄存器
+    uint8_t GetDecayRegister();                    // 获取当前衰减寄存器值
 }; 
