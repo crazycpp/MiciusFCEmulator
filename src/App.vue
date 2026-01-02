@@ -225,6 +225,7 @@ function uiTick(): void {
 
   const ppu = emulator.getPpuDebugInfo()
   const cart = emulator.getCartDebugInfo()
+  const test = emulator.getTestRomStatus()
   const joy = emulator.getJoypad1DebugInfo()
   const joy2 = emulator.getJoypad2DebugInfo()
   const spritesOn = (ppu.ppumask & 0x10) !== 0
@@ -260,6 +261,7 @@ function uiTick(): void {
       .toString(16)
       .toUpperCase()
       .padStart(4, '0')} x=${ppu.xFine} w=${ppu.wLatch}`,
+    test.status !== 0 ? `TEST $6000=${test.status} ${test.message ? `| ${test.message}` : ''}` : 'TEST $6000=0',
     `JOY1 buttons=${joy.buttons.toString(16).toUpperCase().padStart(2, '0')} strobe=${joy.strobe ? '1' : '0'} shift=${joy.shift.toString(16).toUpperCase().padStart(2, '0')}`,
     `JOY2 buttons=${joy2.buttons.toString(16).toUpperCase().padStart(2, '0')} strobe=${joy2.strobe ? '1' : '0'} shift=${joy2.shift.toString(16).toUpperCase().padStart(2, '0')}`,
     ppu.oamPreview ? `OAM preview:\n${ppu.oamPreview}` : 'OAM preview: (none)',

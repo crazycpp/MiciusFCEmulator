@@ -119,6 +119,34 @@ export class Emulator {
     this.cpuTraceEnabled = enabled
   }
 
+  public getTestRomStatus(): { readonly status: number; readonly message: string } {
+    // Common convention used by many NES test ROMs:
+    // - $6000: 0 = running, 1 = pass, other = fail/error
+    // - $6004+: null-terminated ASCII message
+    const status = this.bus.peek(0x6000) & 0xff
+
+    let message = ''
+    if (status !== 0) {
+      const chars: number[] = []
+      for (let i = 0; i < 200; i++) {
+        const b = this.bus.peek((0x6004 + i) & 0xffff) & 0xff
+        if (b === 0x00) break
+        chars.push(b)
+      }
+
+      // Basic ASCII sanity check.
+      let printable = 0
+      for (const c of chars) {
+        if (c === 0x0a || c === 0x0d || (c >= 0x20 && c <= 0x7e)) printable++
+      }
+      if (chars.length > 0 && printable / chars.length >= 0.9) {
+        message = String.fromCharCode(...chars)
+      }
+    }
+
+    return { status, message }
+  }
+
   public setAudioSampleRate(sampleRate: number | null): void {
     this.apu.setSampleRate(sampleRate)
   }

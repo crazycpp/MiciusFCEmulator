@@ -11,6 +11,9 @@ export interface CpuAddressSpace {
 
 export class Bus implements CpuAddressSpace {
   private readonly ram = new Uint8Array(0x800)
+  // Simple PRG-RAM window at $6000-$7FFF (8KB). Many mappers provide this; even when absent,
+  // mapping it helps common test ROMs that report results through PRG-RAM.
+  private readonly prgRam = new Uint8Array(0x2000)
   private cart: Cartridge | null = null
 
   private readonly joypad1 = new Joypad()
@@ -60,6 +63,10 @@ export class Bus implements CpuAddressSpace {
       return this.apu.readRegister(a)
     }
 
+    if (a >= 0x6000 && a <= 0x7fff) {
+      return this.prgRam[a & 0x1fff] ?? 0
+    }
+
     if (a >= 0x8000) {
       const v = this.cart?.cpuRead(a)
       if (v !== null && v !== undefined) return v & 0xff
@@ -92,6 +99,10 @@ export class Bus implements CpuAddressSpace {
 
     if (a >= 0x4000 && a <= 0x4017) {
       return this.apu.readRegister(a)
+    }
+
+    if (a >= 0x6000 && a <= 0x7fff) {
+      return this.prgRam[a & 0x1fff] ?? 0
     }
 
     if (a >= 0x8000) {
@@ -136,6 +147,11 @@ export class Bus implements CpuAddressSpace {
       return
     }
 
+    if (a >= 0x6000 && a <= 0x7fff) {
+      this.prgRam[a & 0x1fff] = v
+      return
+    }
+
     if (a >= 0x8000) {
       if (this.cart?.cpuWrite(a, v)) return
     }
@@ -143,6 +159,7 @@ export class Bus implements CpuAddressSpace {
 
   public reset(): void {
     this.ram.fill(0)
+    this.prgRam.fill(0)
     this.apu.reset()
     this.ppu.reset()
     this.joypad1.reset()
