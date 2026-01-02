@@ -119,6 +119,14 @@ export class Emulator {
     this.cpuTraceEnabled = enabled
   }
 
+  public setAudioSampleRate(sampleRate: number | null): void {
+    this.apu.setSampleRate(sampleRate)
+  }
+
+  public drainAudioSamplesInterleaved(maxFrames = 4096): Float32Array {
+    return this.apu.drainSamplesInterleaved(maxFrames)
+  }
+
   public setJoypad1Button(button: JoypadButton, pressed: boolean): void {
     this.bus.setJoypad1Button(button, pressed)
   }
@@ -245,6 +253,7 @@ export class Emulator {
 
       const cycAfter = this.cpu.getCycleCount()
       const delta = Math.max(0, cycAfter - cycBefore)
+      this.apu.tickCpuCycles(delta)
       this.ppu.tick(delta * 3)
       if (this.ppu.pollNmi()) {
         this.cpu.requestNmi()
@@ -304,6 +313,7 @@ export class Emulator {
 
     const cycAfter = this.cpu.getCycleCount()
     const delta = Math.max(0, cycAfter - cycBefore)
+    this.apu.tickCpuCycles(delta)
     this.ppu.tick(delta * 3)
     if (this.ppu.pollNmi()) {
       this.cpu.requestNmi()

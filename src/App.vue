@@ -2,12 +2,14 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { Emulator } from './emulator/Emulator'
 import { OPCODES } from './emulator/cpu/OpcodeTable'
+import { WebAudioWorkletSink } from './platform/audio/WebAudioWorkletSink'
 import { Webgl2VideoSink } from './platform/video/Webgl2VideoSink'
 import type { JoypadButton } from './emulator/input/Joypad'
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const emulator = new Emulator()
 const video = new Webgl2VideoSink()
+const audio = new WebAudioWorkletSink()
 
 const traceLines = ref<string[]>([])
 const traceEnabled = ref(false)
@@ -32,6 +34,14 @@ let joypadKeyHandlers: {
 
 emulator.setCpuTraceEnabled(traceEnabled.value)
 
+async function ensureAudioStarted(): Promise<void> {
+  if (!audio.started) {
+    await audio.ensureStarted()
+  }
+  // Re-apply sample rate every time because emulator.reset()/loadRom() resets APU state.
+  emulator.setAudioSampleRate(audio.sampleRate)
+}
+
 async function handleLoadRomClick(): Promise<void> {
   romInputRef.value?.click()
 }
@@ -43,6 +53,13 @@ async function handleRomSelected(event: Event): Promise<void> {
 
   const buf = await file.arrayBuffer()
   emulator.loadRom(buf)
+  // A file picker is a user gesture in most browsers, so we can also arm audio here.
+  // If the browser blocks it, audio will start on Run/Step instead.
+  try {
+    await ensureAudioStarted()
+  } catch {
+    // ignore
+  }
   presentOnce()
 
   // Reset the input so selecting the same file again triggers change.
@@ -53,6 +70,7 @@ function handleRunPause(): void {
   if (emulator.runState === 'running') {
     emulator.pause()
   } else {
+    void ensureAudioStarted()
     emulator.start()
   }
 
@@ -61,6 +79,7 @@ function handleRunPause(): void {
 
 function handleReset(): void {
   emulator.reset()
+  void ensureAudioStarted()
   presentOnce()
   runState.value = emulator.runState
 }
@@ -72,12 +91,14 @@ function handleTraceToggle(): void {
 }
 
 function handleStepFrame(): void {
+  void ensureAudioStarted()
   emulator.stepFrame()
   presentOnce()
   runState.value = emulator.runState
 }
 
 function handleStepInstruction(): void {
+  void ensureAudioStarted()
   emulator.stepInstruction()
   presentOnce()
   runState.value = emulator.runState
@@ -193,6 +214,14 @@ function presentOnce(): void {
 function uiTick(): void {
   // Keep WebGL presenting even if emulator runs internally.
   presentOnce()
+
+  // Drain generated audio and push to the worklet (dual-mono stereo).
+  if (audio.started) {
+    const samples = emulator.drainAudioSamplesInterleaved(4096)
+    if (samples.length > 0) {
+      audio.pushInterleaved(samples)
+    }
+  }
 
   const ppu = emulator.getPpuDebugInfo()
   const cart = emulator.getCartDebugInfo()
@@ -313,6 +342,7 @@ onBeforeUnmount(() => {
     uiRafId = null
   }
   video.dispose()
+  void audio.dispose()
 
   if (joypadKeyHandlers) {
     window.removeEventListener('keydown', joypadKeyHandlers.onKeyDown)
