@@ -16,6 +16,7 @@ export class Webgl2VideoSink implements VideoSink {
   private program: WebGLProgram | null = null
   private vao: WebGLVertexArrayObject | null = null
   private texture: WebGLTexture | null = null
+  private canvas: HTMLCanvasElement | null = null
   private uTexLoc: WebGLUniformLocation | null = null
   private uScaleLoc: WebGLUniformLocation | null = null
 
@@ -23,6 +24,7 @@ export class Webgl2VideoSink implements VideoSink {
   private frameHeight = 0
 
   initialize(canvas: HTMLCanvasElement): void {
+    this.canvas = canvas
     const gl = canvas.getContext('webgl2', { alpha: false, antialias: false })
     if (!gl) {
       throw new Error('WebGL2 not supported')
@@ -116,6 +118,9 @@ export class Webgl2VideoSink implements VideoSink {
     const texture = this.texture
 
     if (!gl || !program || !vao || !texture) return
+
+    // Keep drawing buffer in sync with responsive CSS size.
+    if (this.canvas) this.resizeToCanvas(this.canvas)
 
     if (frame.width !== this.frameWidth || frame.height !== this.frameHeight) {
       this.frameWidth = frame.width
