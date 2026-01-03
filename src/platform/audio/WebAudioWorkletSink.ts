@@ -1,3 +1,5 @@
+import workletUrl from './apu.worklet.ts?url'
+
 export class WebAudioWorkletSink {
   private ctx: AudioContext | null = null
   private node: AudioWorkletNode | null = null
@@ -21,7 +23,6 @@ export class WebAudioWorkletSink {
 
     // Load worklet module. Use Vite's `?url` so the worklet is emitted in production
     // builds (GitHub Pages) and resolves under the correct `base` path.
-    const workletUrl = new URL('./apu.worklet.ts?url', import.meta.url).toString()
     await ctx.audioWorklet.addModule(workletUrl)
 
     const node = new AudioWorkletNode(ctx, 'apu-player', {
