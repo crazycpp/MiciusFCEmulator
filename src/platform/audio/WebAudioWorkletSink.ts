@@ -1,5 +1,3 @@
-import workletUrl from './apu.worklet.ts?url'
-
 export class WebAudioWorkletSink {
   private ctx: AudioContext | null = null
   private node: AudioWorkletNode | null = null
@@ -21,8 +19,9 @@ export class WebAudioWorkletSink {
       await ctx.resume()
     }
 
-    // Load worklet module. Use Vite's `?url` so the worklet is emitted in production
-    // builds (GitHub Pages) and resolves under the correct `base` path.
+    // Load worklet module from public/ so it's always available in production builds.
+    // BASE_URL includes the GitHub Pages repo subpath (e.g. /MiciusFCEmulator/).
+    const workletUrl = `${import.meta.env.BASE_URL}apu.worklet.js`
     await ctx.audioWorklet.addModule(workletUrl)
 
     const node = new AudioWorkletNode(ctx, 'apu-player', {
