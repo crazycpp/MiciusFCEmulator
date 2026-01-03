@@ -233,7 +233,9 @@ function uiTick(): void {
   ppuDebugText.value = [
     cart.loaded
       ? `CART mapper=${cart.mapperNumber} mirroring=${cart.mirroring} PRG=${cart.prgRomSizeBytes} CHR=${cart.chrRomSizeBytes} chrIsRam=${cart.chrIsRam ? '1' : '0'}`
-      : 'CART (none)',
+      : cart.lastHeader
+        ? `CART (load failed) mapper=${cart.lastHeader.mapperNumber} mirroring=${cart.lastHeader.mirroring} PRG=${cart.lastHeader.prgRomSizeBytes} CHR=${cart.lastHeader.chrRomSizeBytes} trainer=${cart.lastHeader.hasTrainer ? '1' : '0'} nes2=${cart.lastHeader.isNes2_0 ? '1' : '0'} | error=${cart.lastLoadError ?? '(unknown)'}`
+        : `CART (none)${cart.lastLoadError ? ' | error=' + cart.lastLoadError : ''}`,
     `PPUCTRL=${ppu.ppuctrl.toString(16).toUpperCase().padStart(2, '0')}  PPUMASK=${ppu.ppumask.toString(16).toUpperCase().padStart(2, '0')}  PPUSTATUS=${ppu.ppustatus.toString(16).toUpperCase().padStart(2, '0')}`,
     `BG=${bgOn ? 'on' : 'off'}  SPR=${spritesOn ? 'on' : 'off'}  OAMADDR=${ppu.oamaddr.toString(16).toUpperCase().padStart(2, '0')}`,
     `OAMDMA count=${ppu.oamDmaCount}  lastPage=${ppu.lastOamDmaPage.toString(16).toUpperCase().padStart(2, '0')}  lastNonZero=${ppu.lastOamDmaNonZero}`,

@@ -5,6 +5,7 @@ import { ApuStub } from './apu/ApuStub'
 import { Bus } from './bus/Bus'
 import { Cpu6502 } from './cpu/Cpu6502'
 import { Cartridge } from './cart/Cartridge'
+import { parseINesRom, type INesHeader } from './cart/ines'
 import { Disassembler } from './cpu/Disassembler'
 import { PpuStub } from './ppu/PpuStub'
 import { hex16, hex8 } from './util/hex'
@@ -23,10 +24,12 @@ export class Emulator {
   private readonly apu = new ApuStub()
   private readonly ppu = new PpuStub()
   private readonly bus = new Bus(this.apu, this.ppu)
-  private readonly cpu = new Cpu6502(this.bus)
+  private readonly cpu = new Cpu6502(this.bus, (cpuCycles) => this.onCpuCycles(cpuCycles))
   private readonly disasm = new Disassembler(this.bus)
 
   private cart: Cartridge | null = null
+  private lastRomLoadError: string | null = null
+  private lastRomHeader: INesHeader | null = null
 
   private state: EmulatorRunState = 'stopped'
   private rafId: number | null = null
@@ -93,6 +96,8 @@ export class Emulator {
     readonly prgRomSizeBytes: number
     readonly chrRomSizeBytes: number
     readonly chrIsRam: boolean
+    readonly lastLoadError: string | null
+    readonly lastHeader: INesHeader | null
   } {
     if (!this.cart) {
       return {
@@ -102,6 +107,8 @@ export class Emulator {
         prgRomSizeBytes: 0,
         chrRomSizeBytes: 0,
         chrIsRam: false,
+        lastLoadError: this.lastRomLoadError,
+        lastHeader: this.lastRomHeader,
       }
     }
 
@@ -112,11 +119,28 @@ export class Emulator {
       prgRomSizeBytes: this.cart.prgRomSizeBytes,
       chrRomSizeBytes: this.cart.chrRomSizeBytes,
       chrIsRam: this.cart.hasChrRam,
+      lastLoadError: this.lastRomLoadError,
+      lastHeader: this.lastRomHeader,
     }
   }
 
   public setCpuTraceEnabled(enabled: boolean): void {
     this.cpuTraceEnabled = enabled
+  }
+
+  private onCpuCycles(cpuCycles: number): void {
+    // Drive APU/PPU timing from CPU cycles so PPUSTATUS changes land at the
+    // right point within polling instructions (timing test ROMs are sensitive).
+    this.apu.tickCpuCycles(cpuCycles)
+    this.ppu.tick(cpuCycles * 3)
+
+    // Mapper IRQ line (e.g. MMC3 scanline IRQ).
+    const irqLevel = this.cart?.mapper.getIrqLevel?.() ?? false
+    this.cpu.setIrqLine(irqLevel)
+
+    if (this.ppu.pollNmi()) {
+      this.cpu.requestNmi()
+    }
   }
 
   public getTestRomStatus(): { readonly status: number; readonly message: string } {
@@ -207,10 +231,42 @@ export class Emulator {
   }
 
   public loadRom(buffer: ArrayBuffer): void {
-    this.cart = Cartridge.fromArrayBuffer(buffer)
-    this.bus.setCartridge(this.cart)
-    this.ppu.setCartridge(this.cart, this.cart.mirroring)
-    this.reset()
+    this.lastRomLoadError = null
+    this.lastRomHeader = null
+
+    // Try parsing header first so we can still show mapper info even if mapper is unsupported.
+    try {
+      const parsed = parseINesRom(buffer)
+      this.lastRomHeader = parsed.header
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      // Common case: user loads a .zip/.7z/.fds/etc.
+      const u8 = new Uint8Array(buffer)
+      if (u8.length >= 4 && u8[0] === 0x50 && u8[1] === 0x4b) {
+        this.lastRomLoadError = `${msg} (looks like a ZIP file; please extract a .nes first)`
+      } else {
+        this.lastRomLoadError = msg
+      }
+      this.cart = null
+      this.bus.setCartridge(null)
+      this.ppu.setCartridge(null, 'horizontal')
+      this.reset()
+      return
+    }
+
+    try {
+      this.cart = Cartridge.fromArrayBuffer(buffer)
+      this.bus.setCartridge(this.cart)
+      this.ppu.setCartridge(this.cart, this.cart.mirroring)
+      this.reset()
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      this.lastRomLoadError = msg
+      this.cart = null
+      this.bus.setCartridge(null)
+      this.ppu.setCartridge(null, 'horizontal')
+      this.reset()
+    }
   }
 
   public start(): void {
@@ -242,8 +298,6 @@ export class Emulator {
     const maxInstructions = 300000
 
     while (executed < maxInstructions) {
-      const cycBefore = this.cpu.getCycleCount()
-
       this.cpu.step(({ pc, regs, cyc }) => {
         if (this.breakpoints.has(pc)) {
           this.trace.push(`BREAK @ $${pc.toString(16).padStart(4, '0').toUpperCase()}`)
@@ -279,17 +333,10 @@ export class Emulator {
         return 'continue'
       })
 
-      const cycAfter = this.cpu.getCycleCount()
-      const delta = Math.max(0, cycAfter - cycBefore)
-      this.apu.tickCpuCycles(delta)
-      this.ppu.tick(delta * 3)
-      if (this.ppu.pollNmi()) {
-        this.cpu.requestNmi()
-      }
-
       if (!rendered && this.ppu.pollVblankStart()) {
         // Render the just-completed visible frame before the NMI handler mutates state.
         this.ppu.renderFrame(this.frameBuffer)
+        this.ppu.onFrameRendered()
         rendered = true
       }
 
@@ -307,8 +354,6 @@ export class Emulator {
   }
 
   public stepInstruction(): void {
-    const cycBefore = this.cpu.getCycleCount()
-
     this.cpu.step(({ pc, regs, cyc }) => {
       if (this.breakpoints.has(pc)) {
         this.trace.push(`BREAK @ $${hex16(pc)}`)
@@ -338,14 +383,6 @@ export class Emulator {
 
       return 'continue'
     })
-
-    const cycAfter = this.cpu.getCycleCount()
-    const delta = Math.max(0, cycAfter - cycBefore)
-    this.apu.tickCpuCycles(delta)
-    this.ppu.tick(delta * 3)
-    if (this.ppu.pollNmi()) {
-      this.cpu.requestNmi()
-    }
   }
 
   private schedule(): void {

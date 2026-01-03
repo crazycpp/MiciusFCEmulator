@@ -3,16 +3,26 @@ import type { Cartridge } from '../cart/Cartridge'
 import type { FrameBuffer } from '../video/FrameBuffer'
 import { nesColorIndexToRgb } from './nesColor'
 
+type RenderLineState = {
+  readonly ppuctrl: number
+  readonly ppumask: number
+  readonly scrollX: number
+  readonly scrollY: number
+  readonly scrollNt: number
+  readonly palette0: number
+}
+
 /**
  * Minimal PPU implementation focused on register semantics + NMI/vblank timing.
  * Rendering is not implemented yet.
  */
 export class PpuStub {
+  private static readonly PPU_HZ_NTSC = 1789773 * 3
   private cart: Cartridge | null = null
   private mirroring: NesMirroring = 'horizontal'
 
   // PPU memory
-  private readonly vram = new Uint8Array(0x800) // 2KB internal nametable RAM
+  private readonly vram = new Uint8Array(0x1000) // 4KB nametable RAM (supports four-screen)
   private readonly palette = new Uint8Array(0x20)
   private readonly oam = new Uint8Array(0x100)
 
@@ -44,6 +54,49 @@ export class PpuStub {
 
   // PPUDATA read buffer
   private readBuffer = 0
+
+  // Open bus ("decay") value: many PPU reads expose the last value on the data bus.
+  // Model decay with enough granularity to match common tests:
+  // - $2002 refreshes only bits 5..7
+  // - $2007 palette reads drive bits 0..5, while bits 6..7 stay from decay
+  private openBusLow5 = 0 // bits 0..4
+  private openBusBit5 = 0 // bit 5
+  private openBusHigh2 = 0 // bits 6..7
+
+  private openBusAgeLowPpuCycles = 0
+  private openBusAgeBit5PpuCycles = 0
+  private openBusAgeHighPpuCycles = 0
+
+  private getOpenBus(): number {
+    return (this.openBusLow5 | this.openBusBit5 | this.openBusHigh2) & 0xff
+  }
+
+  private setOpenBus(value: number): void {
+    const v = value & 0xff
+    this.openBusLow5 = v & 0x1f
+    this.openBusBit5 = v & 0x20
+    this.openBusHigh2 = v & 0xc0
+    this.openBusAgeLowPpuCycles = 0
+    this.openBusAgeBit5PpuCycles = 0
+    this.openBusAgeHighPpuCycles = 0
+  }
+
+  private setOpenBusBits5to7(high: number): void {
+    const h = high & 0xe0
+    this.openBusBit5 = h & 0x20
+    this.openBusHigh2 = h & 0xc0
+    this.openBusAgeBit5PpuCycles = 0
+    this.openBusAgeHighPpuCycles = 0
+  }
+
+  private setOpenBusPaletteLow6(low6: number): void {
+    const l = low6 & 0x3f
+    this.openBusLow5 = l & 0x1f
+    this.openBusBit5 = l & 0x20
+    this.openBusAgeLowPpuCycles = 0
+    this.openBusAgeBit5PpuCycles = 0
+    // Do NOT refresh high2; palette reads don't drive bits 6..7.
+  }
 
   // Timing
   private dot = 0 // 0-340
@@ -93,6 +146,11 @@ export class PpuStub {
   private frameScrollFromV_Y = 0
   private frameScrollFromV_Nt = 0
 
+  // Per-scanline mapper snapshot for the simplified renderer (e.g. MMC3 mid-frame CHR bank switches).
+  private readonly mapperRenderStateByScanline: Array<unknown | undefined> = new Array(240)
+
+  private readonly renderStateByScanline: Array<RenderLineState | undefined> = new Array(240)
+
   private lastStableStatusScrollX = 0
   private lastStableStatusScrollY = 0
 
@@ -115,6 +173,15 @@ export class PpuStub {
     const v = this.vblankStartPulse
     this.vblankStartPulse = false
     return v
+  }
+
+  /**
+   * Called by the emulator immediately after rendering a frame at vblank start.
+   * This aligns our simplified per-frame bookkeeping with typical game behavior:
+   * NMI runs during vblank and prepares scroll/VRAM updates for the *next* visible frame.
+   */
+  public onFrameRendered(): void {
+    this.beginFrame()
   }
 
   /**
@@ -243,6 +310,10 @@ export class PpuStub {
     this.frameId++
     this.lastSprite0Hit = false
 
+    // Prevent a partial $2005/$2006 write sequence from spanning the frame boundary in our
+    // simplified bookkeeping (can mis-detect split scroll and cause visible wrap artifacts).
+    this.w = 0
+
     // Learn whether the game uses split-scroll (multiple $2005 pairs per frame).
     // We use this to enable SMB-style HUD/playfield splitting without impacting
     // games that only set scroll once per frame.
@@ -280,6 +351,9 @@ export class PpuStub {
     this.frameLast2005_2 = 0
     this.frameLastNonZero2005_1 = 0
     this.frameLastNonZero2005_2 = 0
+
+    this.mapperRenderStateByScanline.fill(undefined)
+    this.renderStateByScanline.fill(undefined)
   }
 
   /**
@@ -290,16 +364,26 @@ export class PpuStub {
     const a = addr & 0x2007
     switch (a) {
       case 0x2002:
-        return ((this.ppustatus & 0xe0) | (this.readBuffer & 0x1f)) & 0xff
+        // Side-effect-free: do not clear flags or update the bus.
+        return ((this.ppustatus & 0xe0) | (this.openBusLow5 & 0x1f)) & 0xff
       case 0x2004:
+        // OAMDATA is readable; when reading sprite attribute bytes, bits 2-4 are always 0.
+        if ((this.oamaddr & 0x03) === 0x02) {
+          return (this.oam[this.oamaddr & 0xff] ?? 0) & 0xe3
+        }
         return this.oam[this.oamaddr & 0xff] ?? 0
       case 0x2007: {
         const value = this.readPpuMemory(this.v)
         const isPalette = (this.v & 0x3fff) >= 0x3f00
-        return (isPalette ? value : this.readBuffer) & 0xff
+        if (isPalette) {
+          // Palette reads drive bits 0..5; bits 6..7 come from open bus.
+          return ((value & 0x3f) | (this.openBusHigh2 & 0xc0)) & 0xff
+        }
+        return this.readBuffer & 0xff
       }
       default:
-        return 0
+        // Write-only regs read as open bus.
+        return this.getOpenBus()
     }
   }
 
@@ -308,17 +392,25 @@ export class PpuStub {
     switch (a) {
       case 0x2002: {
         // PPUSTATUS
-        const result = (this.ppustatus & 0xe0) | (this.readBuffer & 0x1f)
+        const result = (this.ppustatus & 0xe0) | (this.openBusLow5 & 0x1f)
         // clear vblank flag
         this.ppustatus &= ~0x80
         // reset write toggle
         this.w = 0
         this.updateNmiLevel()
+        // $2002 places status bits onto the bus, but should not refresh the low 5 decay bits.
+        this.setOpenBusBits5to7(this.ppustatus & 0xe0)
         return result & 0xff
       }
       case 0x2004:
         // OAMDATA
-        return this.oam[this.oamaddr & 0xff] ?? 0
+        if ((this.oamaddr & 0x03) === 0x02) {
+          // Sprite attribute byte: bits 2-4 read as 0.
+          this.setOpenBus((this.oam[this.oamaddr & 0xff] ?? 0) & 0xe3)
+        } else {
+          this.setOpenBus(this.oam[this.oamaddr & 0xff] ?? 0)
+        }
+        return this.getOpenBus()
       case 0x2007: {
         // PPUDATA
         const value = this.readPpuMemory(this.v)
@@ -327,7 +419,8 @@ export class PpuStub {
         let result = 0
         if (isPalette) {
           // Palette reads are not buffered
-          result = value
+          // High 2 bits come from open bus decay.
+          result = ((value & 0x3f) | (this.openBusHigh2 & 0xc0)) & 0xff
           this.readBuffer = value
         } else {
           result = this.readBuffer
@@ -335,11 +428,23 @@ export class PpuStub {
         }
 
         this.incrementVramAddr()
+        if (isPalette) {
+          // Only refresh bits 0..5; bits 6..7 stay from decay.
+          this.setOpenBusPaletteLow6(result)
+        } else {
+          this.setOpenBus(result)
+        }
         return result & 0xff
       }
+      case 0x2000: // PPUCTRL (write-only)
+      case 0x2001: // PPUMASK (write-only)
+      case 0x2003: // OAMADDR (write-only)
+      case 0x2005: // PPUSCROLL (write-only)
+      case 0x2006: // PPUADDR (write-only)
       default:
         // For now, other registers are write-only.
-        return 0
+        // Reading write-only regs returns open bus but should NOT refresh decay.
+        return this.getOpenBus()
     }
   }
 
@@ -365,6 +470,9 @@ export class PpuStub {
   public writeRegister(addr: number, value: number): void {
     const a = addr & 0x2007
     const v = value & 0xff
+
+    // Any write puts the value on the open bus.
+    this.setOpenBus(v)
 
     switch (a) {
       case 0x2000: {
@@ -453,13 +561,85 @@ export class PpuStub {
    * Tick PPU by a number of PPU cycles (dots). CPU->PPU ratio is 1:3.
    */
   public tick(ppuCycles: number): void {
+    if (ppuCycles > 0) {
+      this.openBusAgeLowPpuCycles += ppuCycles
+      this.openBusAgeBit5PpuCycles += ppuCycles
+      this.openBusAgeHighPpuCycles += ppuCycles
+
+      if (this.openBusAgeLowPpuCycles >= PpuStub.PPU_HZ_NTSC) {
+        this.openBusAgeLowPpuCycles = PpuStub.PPU_HZ_NTSC
+        this.openBusLow5 = 0
+      }
+      if (this.openBusAgeBit5PpuCycles >= PpuStub.PPU_HZ_NTSC) {
+        this.openBusAgeBit5PpuCycles = PpuStub.PPU_HZ_NTSC
+        this.openBusBit5 = 0
+      }
+      if (this.openBusAgeHighPpuCycles >= PpuStub.PPU_HZ_NTSC) {
+        this.openBusAgeHighPpuCycles = PpuStub.PPU_HZ_NTSC
+        this.openBusHigh2 = 0
+      }
+    }
     for (let i = 0; i < ppuCycles; i++) {
-      this.dot++
-      if (this.dot >= 341) {
-        this.dot = 0
-        this.scanline++
-        if (this.scanline >= 262) {
-          this.scanline = 0
+      // Capture mapper state for this scanline so renderFrame can approximate mid-frame bank changes.
+      if (this.dot === 0) {
+        if (this.scanline >= 0 && this.scanline < 240) {
+          this.renderStateByScanline[this.scanline] = {
+            ppuctrl: this.ppuctrl & 0xff,
+            ppumask: this.ppumask & 0xff,
+            scrollX: this.scrollXReg & 0xff,
+            scrollY: this.scrollYReg & 0xff,
+            scrollNt: this.scrollBaseNametable & 0x03,
+            palette0: this.palette[0] ?? 0,
+          }
+
+          // Only capture mapper state when rendering is enabled (avoids spurious clocks in blanking).
+          const renderingEnabled = (this.ppumask & 0x18) !== 0
+          if (renderingEnabled) {
+            const s = this.cart?.mapper.saveRenderState?.()
+            if (s !== undefined) this.mapperRenderStateByScanline[this.scanline] = s
+          }
+        }
+      }
+
+      // MMC3 scanline IRQ clock (approximation): tick once per visible scanline.
+      // Real MMC3 clocks from PPU A12 rises; we approximate using a stable dot.
+      if (this.dot === 260) {
+        const renderingEnabled = (this.ppumask & 0x18) !== 0
+        if (renderingEnabled && this.scanline >= 0 && this.scanline < 240) {
+          this.cart?.mapper.onPpuScanline?.()
+        }
+      }
+
+      // Sprite overflow (PPUSTATUS bit 5) timing:
+      // Real hardware performs sprite evaluation for the *next* scanline during dots 257-320.
+      // Timing test ROMs are sensitive to this.
+      if (this.dot === 257) {
+        const renderingEnabled = (this.ppumask & 0x18) !== 0 // bg or sprites
+        if (renderingEnabled) {
+          let targetScanline = -1
+          if (this.scanline === 261) targetScanline = 0
+          else if (this.scanline >= 0 && this.scanline < 239) targetScanline = this.scanline + 1
+
+          if (targetScanline >= 0 && targetScanline < 240) {
+            const spriteSize16 = (this.ppuctrl & 0x20) !== 0
+            const spriteHeight = spriteSize16 ? 16 : 8
+
+            let count = 0
+            for (let s = 0; s < 64; s++) {
+              const o = s * 4
+              const oy = this.oam[o] ?? 0
+              const spriteY = oy & 0xff
+              if (spriteY >= 240) continue
+              if (targetScanline >= spriteY && targetScanline < spriteY + spriteHeight) {
+                count++
+                if (count >= 9) break
+              }
+            }
+
+            if (count >= 9) {
+              this.ppustatus |= 0x20
+            }
+          }
         }
       }
 
@@ -505,10 +685,20 @@ export class PpuStub {
         // Clear sprite 0 hit + sprite overflow at start of pre-render.
         this.ppustatus &= ~0x40
         this.ppustatus &= ~0x20
-        // Align our simplified "frame" bookkeeping to the real frame boundary.
-        this.beginFrame()
+        // Prevent a partial $2005/$2006 write sequence from spanning the frame boundary.
+        this.w = 0
         this.frameStartPulse = true
         this.updateNmiLevel()
+      }
+
+      // Advance PPU position after processing current dot.
+      this.dot++
+      if (this.dot >= 341) {
+        this.dot = 0
+        this.scanline++
+        if (this.scanline >= 262) {
+          this.scanline = 0
+        }
       }
     }
   }
@@ -547,11 +737,15 @@ export class PpuStub {
     let endScrollX = ((this.scrollXReg & 0xff) & 0xf8) | (this.x & 0x07)
     let endScrollY = this.scrollYReg & 0xff
 
+    const havePairs = this.frame2005PairCount > 0
+    // Once we learn the title uses SMB-style split scrolling, keep the split active even on
+    // frames where we only observe one $2005 pair (our simplified renderer can miss the other).
+    const useSplit = this.sawMulti2005Pairs
+
     // Many games (including SMB) do multiple $2005 writes for split scrolling.
     // Our simplified renderer cannot emulate mid-scanline changes; instead, approximate:
     // - status bar uses the first $2005 pair of the frame
     // - playfield uses the last non-zero $2005 pair of the frame (fallback: end-of-frame)
-    const havePairs = this.frame2005PairCount > 0
     const firstPairNonZero = (this.frameFirst2005_1 | this.frameFirst2005_2) !== 0
 
     // For non-split games, some titles may rely on $2006 (v/t) rather than writing $2005.
@@ -573,18 +767,18 @@ export class PpuStub {
     // Some games intentionally wrap the top 2 tile rows into overscan (e.g. scrollY=224).
     // On real hardware these rows are typically hidden by CRT overscan; in a full 240p
     // framebuffer they show up as a duplicated strip. Hide them only for non-split games.
-    const overscanMaskTop = !this.sawMulti2005Pairs && endScrollY >= 224 ? 16 : 0
+    const overscanMaskTop = !useSplit && endScrollY >= 224 ? 16 : 0
 
     // SMB-style split: sometimes we only observe the mid-frame playfield scroll write.
     // If we see exactly one non-zero pair, assume it's the playfield scroll and keep HUD fixed.
     const statusScrollX =
-      this.sawMulti2005Pairs && this.frame2005PairCount === 1 && firstPairNonZero
+      useSplit && this.frame2005PairCount === 1 && firstPairNonZero
         ? 0
         : havePairs
           ? (this.frameFirst2005_1 & 0xff)
           : (this.lastStableStatusScrollX & 0xff)
     const statusScrollY =
-      this.sawMulti2005Pairs && this.frame2005PairCount === 1 && firstPairNonZero
+      useSplit && this.frame2005PairCount === 1 && firstPairNonZero
         ? 0
         : havePairs
           ? (this.frameFirst2005_2 & 0xff)
@@ -617,18 +811,58 @@ export class PpuStub {
     // We don't track fine X separately per pair; treat raw scroll as coarse+fine already.
     const playfieldScrollX = playfieldScrollXRaw & 0xff
 
-    const splitY = this.sawMulti2005Pairs ? 32 : 0
+    const splitY = useSplit ? 32 : 0
 
-    const patternBase = (this.ppuctrl & 0x10) !== 0 ? 0x1000 : 0x0000
+    const mapper = this.cart?.mapper
+    const canReplayMapper = !!mapper?.saveRenderState && !!mapper?.loadRenderState
+    const canReplayPpuState = canReplayMapper
+    const mapperStateAtEndOfFrame = canReplayMapper ? mapper!.saveRenderState!() : undefined
 
     if (bgEnabled) {
       for (let y = 0; y < 240; y++) {
+        if (canReplayMapper) {
+          const s = this.mapperRenderStateByScanline[y]
+          if (s !== undefined) mapper!.loadRenderState!(s)
+        }
+
+        const lineState = canReplayPpuState ? this.renderStateByScanline[y] : undefined
+        const ppuctrlLine = (lineState?.ppuctrl ?? this.ppuctrl) & 0xff
+        const ppumaskLine = (lineState?.ppumask ?? this.ppumask) & 0xff
+        const bgEnabledLine = canReplayPpuState ? (ppumaskLine & 0x08) !== 0 : bgEnabled
+        const showBgLeft8Line = canReplayPpuState ? (ppumaskLine & 0x02) !== 0 : showBgLeft8
+        const patternBaseLine = (ppuctrlLine & 0x10) !== 0 ? 0x1000 : 0x0000
+
+        const ubLine = canReplayPpuState ? nesColorIndexToRgb((lineState?.palette0 ?? universalBg) & 0x3f) : ub
+
+        if (!bgEnabledLine) {
+          // Background disabled for this scanline (only relevant for mid-frame effects).
+          for (let x = 0; x < 256; x++) {
+            const i = (y * 256 + x) * 4
+            frame.rgba[i] = ubLine.r
+            frame.rgba[i + 1] = ubLine.g
+            frame.rgba[i + 2] = ubLine.b
+            frame.rgba[i + 3] = 0xff
+          }
+          continue
+        }
+
         const useStart = y < splitY
-        // If the game uses split scrolling, keep the HUD stable by forcing it to NT0.
-        // Otherwise, treat the whole screen as one region.
-        const baseNametableIndex = useStart ? 0 : endBaseNametableIndex
-        const scrollX = useStart ? statusScrollX : playfieldScrollX
-        const scrollY = useStart ? statusScrollY : playfieldScrollY
+        // Only use per-scanline scroll state for mappers that rely on mid-frame effects (e.g. MMC3).
+        const baseNametableIndex = (
+          canReplayPpuState
+            ? (lineState?.scrollNt ?? (useStart ? 0 : endBaseNametableIndex))
+            : (useStart ? 0 : endBaseNametableIndex)
+        ) & 0x03
+        const scrollX = (
+          canReplayPpuState
+            ? (lineState?.scrollX ?? (useStart ? statusScrollX : playfieldScrollX))
+            : (useStart ? statusScrollX : playfieldScrollX)
+        ) & 0xff
+        const scrollY = (
+          canReplayPpuState
+            ? (lineState?.scrollY ?? (useStart ? statusScrollY : playfieldScrollY))
+            : (useStart ? statusScrollY : playfieldScrollY)
+        ) & 0xff
 
         const worldY = y + scrollY
         const yWrapped = ((worldY % 480) + 480) % 480
@@ -638,12 +872,12 @@ export class PpuStub {
         const fineY = yInNt & 0x07
 
         for (let x = 0; x < 256; x++) {
-          // Left 8-pixel background masking.
-          if (x < 8 && !showBgLeft8) {
+          // Left 8-pixel background masking (PPUMASK bit 1).
+          if (x < 8 && !showBgLeft8Line) {
             const i = (y * 256 + x) * 4
-            frame.rgba[i] = ub.r
-            frame.rgba[i + 1] = ub.g
-            frame.rgba[i + 2] = ub.b
+            frame.rgba[i] = ubLine.r
+            frame.rgba[i + 1] = ubLine.g
+            frame.rgba[i + 2] = ubLine.b
             frame.rgba[i + 3] = 0xff
             continue
           }
@@ -670,7 +904,7 @@ export class PpuStub {
           const shift = (tileY & 0x02 ? 4 : 0) + (tileX & 0x02 ? 2 : 0)
           const palSelect = (atByte >> shift) & 0x03
 
-          const tileBase = patternBase + tileIndex * 16
+          const tileBase = patternBaseLine + tileIndex * 16
           const plane0 = this.cart?.ppuRead((tileBase + fineY) & 0x1fff) ?? 0
           const plane1 = this.cart?.ppuRead((tileBase + fineY + 8) & 0x1fff) ?? 0
 
@@ -696,13 +930,18 @@ export class PpuStub {
       }
     }
 
+    // Restore end-of-frame mapper state before sprite rendering / CPU continues.
+    if (canReplayMapper && mapperStateAtEndOfFrame !== undefined) {
+      mapper!.loadRenderState!(mapperStateAtEndOfFrame)
+    }
+
     if (!spritesEnabled) {
       return
     }
 
     const spriteSize16 = (this.ppuctrl & 0x20) !== 0
-    const spritePatternBase8x8 = (this.ppuctrl & 0x08) !== 0 ? 0x1000 : 0x0000
     const spriteHeight = spriteSize16 ? 16 : 8
+    const spritePatternBase8x8 = (this.ppuctrl & 0x08) !== 0 ? 0x1000 : 0x0000
 
     for (let s = 0; s < 64; s++) {
       const o = s * 4
@@ -740,13 +979,26 @@ export class PpuStub {
         const sy = spriteY + row
         if (sy < 0 || sy >= 240) continue
 
-        const tileRow = flipV ? spriteHeight - 1 - row : row
+        if (canReplayMapper) {
+          const s = this.mapperRenderStateByScanline[sy]
+          if (s !== undefined) mapper!.loadRenderState!(s)
+        }
 
-        let chrBase = spritePatternBase8x8
+        const lineState = canReplayPpuState ? this.renderStateByScanline[sy] : undefined
+        const ppuctrlLine = (lineState?.ppuctrl ?? this.ppuctrl) & 0xff
+        const ppumaskLine = (lineState?.ppumask ?? this.ppumask) & 0xff
+        const showSpritesLeft8Line = canReplayPpuState ? (ppumaskLine & 0x04) !== 0 : showSpritesLeft8
+        const spriteSize16Line = canReplayPpuState ? (ppuctrlLine & 0x20) !== 0 : spriteSize16
+        const spriteHeightLine = spriteSize16Line ? 16 : 8
+        const spritePatternBase8x8Line = canReplayPpuState ? ((ppuctrlLine & 0x08) !== 0 ? 0x1000 : 0x0000) : spritePatternBase8x8
+
+        const tileRow = flipV ? spriteHeightLine - 1 - row : row
+
+        let chrBase = spritePatternBase8x8Line
         let tileIndex = tile
         let fineY = tileRow & 0x07
 
-        if (spriteSize16) {
+        if (spriteSize16Line) {
           // In 8x16 mode, pattern table is selected by tile bit 0.
           chrBase = (tileIndex & 1) !== 0 ? 0x1000 : 0x0000
           tileIndex &= 0xfe
@@ -763,7 +1015,7 @@ export class PpuStub {
         for (let col = 0; col < 8; col++) {
           const sx = spriteX + col
           if (sx < 0 || sx >= 256) continue
-          if (sx < 8 && !showSpritesLeft8) continue
+          if (sx < 8 && !showSpritesLeft8Line) continue
 
           const bit = flipH ? col : 7 - col
           const lo = (plane0 >> bit) & 1
@@ -827,6 +1079,12 @@ export class PpuStub {
     this.t = 0
     this.x = 0
     this.readBuffer = 0
+    this.openBusLow5 = 0
+    this.openBusBit5 = 0
+    this.openBusHigh2 = 0
+    this.openBusAgeLowPpuCycles = 0
+    this.openBusAgeBit5PpuCycles = 0
+    this.openBusAgeHighPpuCycles = 0
     this.scrollXReg = 0
     this.scrollYReg = 0
     this.scrollBaseNametable = 0
@@ -939,8 +1197,9 @@ export class PpuStub {
     const table = (a >> 10) & 0x03
     const offset = a & 0x03ff
 
-    // Map 4 nametables to 2KB VRAM based on mirroring.
-    switch (this.mirroring) {
+    // Map 4 nametables to VRAM based on mirroring.
+    const mirroring = this.cart?.mirroring ?? this.mirroring
+    switch (mirroring) {
       case 'vertical': {
         // [A B A B]
         const mappedTable = table & 0x01
@@ -952,8 +1211,8 @@ export class PpuStub {
         return (mappedTable * 0x0400 + offset) & 0x07ff
       }
       case 'four-screen':
-        // Not implemented: treat as vertical for now (games with true four-screen may render wrong).
-        return (((table & 0x01) * 0x0400) + offset) & 0x07ff
+        // [A B C D] – no mirroring; cartridge provides extra VRAM.
+        return ((table * 0x0400) + offset) & 0x0fff
       default:
         return offset & 0x07ff
     }

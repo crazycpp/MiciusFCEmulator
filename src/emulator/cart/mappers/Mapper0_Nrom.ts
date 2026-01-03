@@ -29,6 +29,14 @@ export class Mapper0_Nrom implements Mapper {
     return null
   }
 
+  public mapPpuRead(addr: number): number | null {
+    return addr & 0x1fff
+  }
+
+  public mapPpuWrite(addr: number, _value: number): number | null {
+    return addr & 0x1fff
+  }
+
   public reset(): void {
     // No internal state.
   }

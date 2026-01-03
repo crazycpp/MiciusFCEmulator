@@ -29,10 +29,21 @@ export class Cpu6502 {
     pc: 0,
   }
 
-  public constructor(private readonly bus: CpuAddressSpace) {}
+  public constructor(
+    private readonly bus: CpuAddressSpace,
+    private readonly onCpuCycles?: (cycles: number) => void,
+  ) {}
 
   private cycles = 0
   private nmiRequested = false
+  private irqLine = false
+
+  private consumeCycles(cycles: number): void {
+    const n = cycles | 0
+    if (n <= 0) return
+    this.cycles += n
+    this.onCpuCycles?.(n)
+  }
 
   public getRegisters(): Readonly<CpuRegisters> {
     return { ...this.regs }
@@ -43,8 +54,9 @@ export class Cpu6502 {
   }
 
   public reset(vector = 0xfffc): void {
-    const lo = this.read8(vector)
-    const hi = this.read8(vector + 1)
+    // Reset timing is handled as a lump below; do not tick per-bus cycles here.
+    const lo = this.bus.read(vector & 0xffff) & 0xff
+    const hi = this.bus.read((vector + 1) & 0xffff) & 0xff
     this.regs.pc = lo | (hi << 8)
     this.regs.a = 0
     this.regs.x = 0
@@ -61,6 +73,10 @@ export class Cpu6502 {
     this.nmiRequested = true
   }
 
+  public setIrqLine(level: boolean): void {
+    this.irqLine = !!level
+  }
+
   public getCycleCount(): number {
     return this.cycles
   }
@@ -71,31 +87,44 @@ export class Cpu6502 {
       this.serviceNmi()
     }
 
+    // IRQ is level-sensitive and masked by the I flag.
+    if (this.irqLine && !this.getFlag(Flag.I)) {
+      this.serviceIrq()
+    }
+
+    const cycAtStart = this.cycles
     const pc = this.regs.pc
     const opcode = this.read8(pc)
 
-    const action = beforeExecute?.({ pc, opcode, cyc: this.cycles, regs: this.getRegisters() }) ?? 'continue'
+    const action = beforeExecute?.({ pc, opcode, cyc: cycAtStart, regs: this.getRegisters() }) ?? 'continue'
     if (action === 'pause') return
 
     // Fetch
     this.regs.pc = (this.regs.pc + 1) & 0xffff
 
-    const info = OPCODES[opcode] ?? ({ opcode, mnemonic: '???', mode: AddressingMode.Implicit, bytes: 1, cycles: 2 } satisfies OpcodeInfo)
+    const info =
+      OPCODES[opcode] ??
+      ({ opcode, mnemonic: '???', mode: AddressingMode.Implicit, bytes: 1, cycles: 2 } satisfies OpcodeInfo)
     const operand = this.resolveOperand(info.mode)
 
-    // Base cycles
-    this.cycles += info.cycles
+    // Execute (may return dynamic extra cycles, e.g. branches)
+    const execExtraCycles = this.execute(info.mnemonic, info.mode, operand)
 
-    // Page-cross cycle (for specific read ops)
-    if (info.addCycleOnPageCross && operand.pageCross) {
-      this.cycles += 1
-    }
+    // Total cycles for this instruction.
+    let total = info.cycles
+    if (info.addCycleOnPageCross && operand.pageCross) total += 1
+    total += execExtraCycles
 
-    // Execute
-    this.execute(info.mnemonic, info.mode, operand)
+    const consumed = this.cycles - cycAtStart
+    const remaining = total - consumed
+    if (remaining > 0) this.consumeCycles(remaining)
   }
 
   private serviceNmi(): void {
+    // Approximate NMI timing as 7 CPU cycles.
+    // We consume cycles as we touch the bus so PPU/APU timing stays aligned.
+    this.consumeCycles(1) // dummy read
+
     // Push PC and status, then jump to NMI vector $FFFA.
     this.push((this.regs.pc >> 8) & 0xff)
     this.push(this.regs.pc & 0xff)
@@ -104,14 +133,33 @@ export class Cpu6502 {
 
     this.setFlag(Flag.I, true)
     this.regs.pc = this.read16(0xfffa)
-    this.cycles += 7
+
+    this.consumeCycles(1) // final internal cycle
+  }
+
+  private serviceIrq(): void {
+    // Approximate IRQ timing as 7 CPU cycles.
+    this.consumeCycles(1) // dummy read
+
+    // Push PC and status, then jump to IRQ/BRK vector $FFFE.
+    this.push((this.regs.pc >> 8) & 0xff)
+    this.push(this.regs.pc & 0xff)
+    // On interrupts, B flag is cleared in the pushed value.
+    this.push((this.regs.p & ~Flag.B) | Flag.U)
+
+    this.setFlag(Flag.I, true)
+    this.regs.pc = this.read16(0xfffe)
+
+    this.consumeCycles(1) // final internal cycle
   }
 
   private read8(addr: number): number {
+    this.consumeCycles(1)
     return this.bus.read(addr & 0xffff) & 0xff
   }
 
   private write8(addr: number, value: number): void {
+    this.consumeCycles(1)
     this.bus.write(addr & 0xffff, value & 0xff)
   }
 
@@ -264,131 +312,131 @@ export class Cpu6502 {
     this.write8(operand.addr, value)
   }
 
-  private execute(mnemonic: Mnemonic, mode: AddressingMode, operand: Operand): void {
+  private execute(mnemonic: Mnemonic, mode: AddressingMode, operand: Operand): number {
     switch (mnemonic) {
       case 'LAX': {
         const v = this.readOperandValue(mode, operand)
         this.regs.a = v & 0xff
         this.regs.x = v & 0xff
         this.setZN(this.regs.a)
-        return
+        return 0
       }
       case 'LDA': {
         this.regs.a = this.readOperandValue(mode, operand)
         this.setZN(this.regs.a)
-        return
+        return 0
       }
       case 'LDX': {
         this.regs.x = this.readOperandValue(mode, operand)
         this.setZN(this.regs.x)
-        return
+        return 0
       }
       case 'LDY': {
         this.regs.y = this.readOperandValue(mode, operand)
         this.setZN(this.regs.y)
-        return
+        return 0
       }
       case 'STA':
         this.writeOperand(mode, operand, this.regs.a)
-        return
+        return 0
       case 'STX':
         this.writeOperand(mode, operand, this.regs.x)
-        return
+        return 0
       case 'STY':
         this.writeOperand(mode, operand, this.regs.y)
-        return
+        return 0
 
       case 'SAX': {
         const v = (this.regs.a & this.regs.x) & 0xff
         this.writeOperand(mode, operand, v)
-        return
+        return 0
       }
 
       case 'AND': {
         const v = this.readOperandValue(mode, operand)
         this.regs.a = (this.regs.a & v) & 0xff
         this.setZN(this.regs.a)
-        return
+        return 0
       }
       case 'ORA': {
         const v = this.readOperandValue(mode, operand)
         this.regs.a = (this.regs.a | v) & 0xff
         this.setZN(this.regs.a)
-        return
+        return 0
       }
       case 'EOR': {
         const v = this.readOperandValue(mode, operand)
         this.regs.a = (this.regs.a ^ v) & 0xff
         this.setZN(this.regs.a)
-        return
+        return 0
       }
       case 'ADC':
         this.adc(this.readOperandValue(mode, operand))
-        return
+        return 0
       case 'SBC':
         this.sbc(this.readOperandValue(mode, operand))
-        return
+        return 0
 
       case 'CMP':
         this.cmp(this.regs.a, this.readOperandValue(mode, operand))
-        return
+        return 0
       case 'CPX':
         this.cmp(this.regs.x, this.readOperandValue(mode, operand))
-        return
+        return 0
       case 'CPY':
         this.cmp(this.regs.y, this.readOperandValue(mode, operand))
-        return
+        return 0
 
       case 'INC': {
         const addr = operand.addr
-        if (addr === undefined) return
+        if (addr === undefined) return 0
         const v = (this.read8(addr) + 1) & 0xff
         this.write8(addr, v)
         this.setZN(v)
-        return
+        return 0
       }
       case 'DEC': {
         const addr = operand.addr
-        if (addr === undefined) return
+        if (addr === undefined) return 0
         const v = (this.read8(addr) - 1) & 0xff
         this.write8(addr, v)
         this.setZN(v)
-        return
+        return 0
       }
 
       case 'DCP': {
         const addr = operand.addr
-        if (addr === undefined) return
+        if (addr === undefined) return 0
         const r = (this.read8(addr) - 1) & 0xff
         this.write8(addr, r)
         this.cmp(this.regs.a, r)
-        return
+        return 0
       }
 
       case 'ISB': {
         const addr = operand.addr
-        if (addr === undefined) return
+        if (addr === undefined) return 0
         const r = (this.read8(addr) + 1) & 0xff
         this.write8(addr, r)
         this.sbc(r)
-        return
+        return 0
       }
 
       case 'SLO': {
         const addr = operand.addr
-        if (addr === undefined) return
+        if (addr === undefined) return 0
         const v = this.read8(addr)
         this.setFlag(Flag.C, (v & 0x80) !== 0)
         const r = (v << 1) & 0xff
         this.write8(addr, r)
         this.regs.a = (this.regs.a | r) & 0xff
         this.setZN(this.regs.a)
-        return
+        return 0
       }
 
       case 'RLA': {
         const addr = operand.addr
-        if (addr === undefined) return
+        if (addr === undefined) return 0
         const v = this.read8(addr)
         const c = this.getFlag(Flag.C) ? 1 : 0
         this.setFlag(Flag.C, (v & 0x80) !== 0)
@@ -396,31 +444,31 @@ export class Cpu6502 {
         this.write8(addr, r)
         this.regs.a = (this.regs.a & r) & 0xff
         this.setZN(this.regs.a)
-        return
+        return 0
       }
 
       case 'SRE': {
         const addr = operand.addr
-        if (addr === undefined) return
+        if (addr === undefined) return 0
         const v = this.read8(addr)
         this.setFlag(Flag.C, (v & 0x01) !== 0)
         const r = (v >> 1) & 0xff
         this.write8(addr, r)
         this.regs.a = (this.regs.a ^ r) & 0xff
         this.setZN(this.regs.a)
-        return
+        return 0
       }
 
       case 'RRA': {
         const addr = operand.addr
-        if (addr === undefined) return
+        if (addr === undefined) return 0
         const v = this.read8(addr)
         const cIn = this.getFlag(Flag.C) ? 0x80 : 0
         this.setFlag(Flag.C, (v & 0x01) !== 0)
         const r = ((v >> 1) | cIn) & 0xff
         this.write8(addr, r)
         this.adc(r)
-        return
+        return 0
       }
 
       case 'ASL': {
@@ -429,16 +477,16 @@ export class Cpu6502 {
           this.setFlag(Flag.C, (v & 0x80) !== 0)
           this.regs.a = (v << 1) & 0xff
           this.setZN(this.regs.a)
-          return
+          return 0
         }
         const addr = operand.addr
-        if (addr === undefined) return
+        if (addr === undefined) return 0
         const v = this.read8(addr)
         this.setFlag(Flag.C, (v & 0x80) !== 0)
         const r = (v << 1) & 0xff
         this.write8(addr, r)
         this.setZN(r)
-        return
+        return 0
       }
       case 'LSR': {
         if (mode === AddressingMode.Accumulator) {
@@ -446,16 +494,16 @@ export class Cpu6502 {
           this.setFlag(Flag.C, (v & 0x01) !== 0)
           this.regs.a = (v >> 1) & 0xff
           this.setZN(this.regs.a)
-          return
+          return 0
         }
         const addr = operand.addr
-        if (addr === undefined) return
+        if (addr === undefined) return 0
         const v = this.read8(addr)
         this.setFlag(Flag.C, (v & 0x01) !== 0)
         const r = (v >> 1) & 0xff
         this.write8(addr, r)
         this.setZN(r)
-        return
+        return 0
       }
       case 'ROL': {
         const c = this.getFlag(Flag.C) ? 1 : 0
@@ -464,16 +512,16 @@ export class Cpu6502 {
           this.setFlag(Flag.C, (v & 0x80) !== 0)
           this.regs.a = ((v << 1) | c) & 0xff
           this.setZN(this.regs.a)
-          return
+          return 0
         }
         const addr = operand.addr
-        if (addr === undefined) return
+        if (addr === undefined) return 0
         const v = this.read8(addr)
         this.setFlag(Flag.C, (v & 0x80) !== 0)
         const r = ((v << 1) | c) & 0xff
         this.write8(addr, r)
         this.setZN(r)
-        return
+        return 0
       }
       case 'ROR': {
         const c = this.getFlag(Flag.C) ? 0x80 : 0
@@ -482,16 +530,16 @@ export class Cpu6502 {
           this.setFlag(Flag.C, (v & 0x01) !== 0)
           this.regs.a = ((v >> 1) | c) & 0xff
           this.setZN(this.regs.a)
-          return
+          return 0
         }
         const addr = operand.addr
-        if (addr === undefined) return
+        if (addr === undefined) return 0
         const v = this.read8(addr)
         this.setFlag(Flag.C, (v & 0x01) !== 0)
         const r = ((v >> 1) | c) & 0xff
         this.write8(addr, r)
         this.setZN(r)
-        return
+        return 0
       }
 
       case 'BIT': {
@@ -499,33 +547,33 @@ export class Cpu6502 {
         this.setFlag(Flag.Z, ((this.regs.a & v) & 0xff) === 0)
         this.setFlag(Flag.V, (v & 0x40) !== 0)
         this.setFlag(Flag.N, (v & 0x80) !== 0)
-        return
+        return 0
       }
 
       case 'JMP':
         if (operand.addr !== undefined) this.regs.pc = operand.addr
-        return
+        return 0
       case 'JSR': {
         const addr = operand.addr
-        if (addr === undefined) return
+        if (addr === undefined) return 0
         const ret = (this.regs.pc - 1) & 0xffff
         this.push((ret >> 8) & 0xff)
         this.push(ret & 0xff)
         this.regs.pc = addr
-        return
+        return 0
       }
       case 'RTS': {
         const lo = this.pop()
         const hi = this.pop()
         this.regs.pc = ((lo | (hi << 8)) + 1) & 0xffff
-        return
+        return 0
       }
       case 'RTI': {
         this.regs.p = (this.pop() | Flag.U) & ~Flag.B
         const lo = this.pop()
         const hi = this.pop()
         this.regs.pc = lo | (hi << 8)
-        return
+        return 0
       }
       case 'BRK': {
         // Skip padding byte
@@ -535,89 +583,89 @@ export class Cpu6502 {
         this.push((this.regs.p | Flag.B) & 0xff)
         this.setFlag(Flag.I, true)
         this.regs.pc = this.read16(0xfffe)
-        return
+        return 0
       }
 
       case 'PHA':
         this.push(this.regs.a)
-        return
+        return 0
       case 'PLA':
         this.regs.a = this.pop()
         this.setZN(this.regs.a)
-        return
+        return 0
       case 'PHP':
         this.push((this.regs.p | Flag.B) & 0xff)
-        return
+        return 0
       case 'PLP':
         this.regs.p = (this.pop() | Flag.U) & ~Flag.B
-        return
+        return 0
 
       case 'TAX':
         this.regs.x = this.regs.a & 0xff
         this.setZN(this.regs.x)
-        return
+        return 0
       case 'TAY':
         this.regs.y = this.regs.a & 0xff
         this.setZN(this.regs.y)
-        return
+        return 0
       case 'TXA':
         this.regs.a = this.regs.x & 0xff
         this.setZN(this.regs.a)
-        return
+        return 0
       case 'TYA':
         this.regs.a = this.regs.y & 0xff
         this.setZN(this.regs.a)
-        return
+        return 0
       case 'TSX':
         this.regs.x = this.regs.sp & 0xff
         this.setZN(this.regs.x)
-        return
+        return 0
       case 'TXS':
         this.regs.sp = this.regs.x & 0xff
-        return
+        return 0
 
       case 'INX':
         this.regs.x = (this.regs.x + 1) & 0xff
         this.setZN(this.regs.x)
-        return
+        return 0
       case 'DEX':
         this.regs.x = (this.regs.x - 1) & 0xff
         this.setZN(this.regs.x)
-        return
+        return 0
       case 'INY':
         this.regs.y = (this.regs.y + 1) & 0xff
         this.setZN(this.regs.y)
-        return
+        return 0
       case 'DEY':
         this.regs.y = (this.regs.y - 1) & 0xff
         this.setZN(this.regs.y)
-        return
+        return 0
 
       case 'CLC':
         this.setFlag(Flag.C, false)
-        return
+        return 0
       case 'SEC':
         this.setFlag(Flag.C, true)
-        return
+        return 0
       case 'CLI':
         this.setFlag(Flag.I, false)
-        return
+        return 0
       case 'SEI':
         this.setFlag(Flag.I, true)
-        return
+        return 0
       case 'CLV':
         this.setFlag(Flag.V, false)
-        return
+        return 0
       case 'CLD':
         this.setFlag(Flag.D, false)
-        return
+        return 0
       case 'SED':
         this.setFlag(Flag.D, true)
-        return
+        return 0
 
       case 'NOP':
       case '???':
-        return
+        return 0
 
       // Branch group (handled here so we can add branch cycles correctly)
       case 'BPL':
@@ -649,13 +697,17 @@ export class Cpu6502 {
                         : this.getFlag(Flag.Z)
 
         if (take) {
-          this.cycles += 1
-          if ((pcBefore & 0xff00) !== (target & 0xff00)) this.cycles += 1
+          let extra = 1
+          if ((pcBefore & 0xff00) !== (target & 0xff00)) extra += 1
           this.regs.pc = target
+          return extra
         }
-        return
+        return 0
       }
     }
+
+    // Default: no dynamic extra cycles.
+    return 0
   }
 }
 

@@ -51,6 +51,14 @@ export class Mapper2_Uxrom implements Mapper {
     return 0
   }
 
+  public mapPpuRead(addr: number): number | null {
+    return addr & 0x1fff
+  }
+
+  public mapPpuWrite(addr: number, _value: number): number | null {
+    return addr & 0x1fff
+  }
+
   public reset(): void {
     this.bankSelect16k = 0
   }

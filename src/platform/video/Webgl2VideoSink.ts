@@ -70,13 +70,16 @@ export class Webgl2VideoSink implements VideoSink {
 
     // Fullscreen quad (two triangles) with UVs.
     // x, y, u, v
+    // Crop a small horizontal overscan region so left-edge masking doesn't show as a vertical strip.
+    const u0 = 8 / 256
+    const u1 = 1 - u0
     const verts = new Float32Array([
-      -1, -1, 0, 1,
-      1, -1, 1, 1,
-      -1, 1, 0, 0,
-      -1, 1, 0, 0,
-      1, -1, 1, 1,
-      1, 1, 1, 0,
+      -1, -1, u0, 1,
+      1, -1, u1, 1,
+      -1, 1, u0, 0,
+      -1, 1, u0, 0,
+      1, -1, u1, 1,
+      1, 1, u1, 0,
     ])
 
     gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW)
