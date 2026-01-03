@@ -1,6 +1,15 @@
 import type { NesMirroring } from '../ines'
 import type { Mapper } from './Mapper'
 
+type Mmc1RenderState = {
+  readonly shiftReg: number
+  readonly shiftCount: number
+  readonly control: number
+  readonly chrBank0: number
+  readonly chrBank1: number
+  readonly prgBank: number
+}
+
 /**
  * Mapper 1 (MMC1)
  * - Serial 5-bit shift register written via $8000-$FFFF
@@ -50,6 +59,29 @@ export class Mapper1_Mmc1 implements Mapper {
     this.prgBank = 0
   }
 
+  public saveRenderState(): unknown {
+    const s: Mmc1RenderState = {
+      shiftReg: this.shiftReg & 0xff,
+      shiftCount: this.shiftCount | 0,
+      control: this.control & 0x1f,
+      chrBank0: this.chrBank0 & 0x1f,
+      chrBank1: this.chrBank1 & 0x1f,
+      prgBank: this.prgBank & 0x1f,
+    }
+    return s
+  }
+
+  public loadRenderState(state: unknown): void {
+    const s = state as Mmc1RenderState
+    if (!s) return
+    this.shiftReg = (s.shiftReg ?? 0x10) & 0xff
+    this.shiftCount = (s.shiftCount ?? 0) | 0
+    this.control = (s.control ?? 0x0c) & 0x1f
+    this.chrBank0 = (s.chrBank0 ?? 0) & 0x1f
+    this.chrBank1 = (s.chrBank1 ?? 0) & 0x1f
+    this.prgBank = (s.prgBank ?? 0) & 0x1f
+  }
+
   public getMirroringOverride(): NesMirroring | null {
     const m = this.control & 0x03
     // 0: one-screen, lower bank; 1: one-screen, upper bank; 2: vertical; 3: horizontal
@@ -57,6 +89,18 @@ export class Mapper1_Mmc1 implements Mapper {
     if (m === 3) return 'horizontal'
     // We don't have explicit single-screen nametable support; choose a stable mapping.
     // Returning null falls back to iNES header mirroring.
+    return null
+  }
+
+  public mapPpuNametable(addr: number): { readonly kind: 'ciram'; readonly page: number } | null {
+    const a = addr & 0x3fff
+    if (a < 0x2000 || a > 0x2fff) return null
+
+    const m = this.control & 0x03
+    // 0: one-screen, lower bank; 1: one-screen, upper bank
+    if (m === 0) return { kind: 'ciram', page: 0 }
+    if (m === 1) return { kind: 'ciram', page: 1 }
+
     return null
   }
 

@@ -64,10 +64,13 @@ export class Bus implements CpuAddressSpace {
     }
 
     if (a >= 0x6000 && a <= 0x7fff) {
+      const v = this.cart?.cpuRead(a)
+      if (v !== null && v !== undefined) return v & 0xff
       return this.prgRam[a & 0x1fff] ?? 0
     }
 
-    if (a >= 0x8000) {
+    // Cartridge space ($4020-$FFFF). Note: $6000-$7FFF is handled above as a simple PRG-RAM window.
+    if (a >= 0x4020) {
       const v = this.cart?.cpuRead(a)
       if (v !== null && v !== undefined) return v & 0xff
     }
@@ -102,10 +105,13 @@ export class Bus implements CpuAddressSpace {
     }
 
     if (a >= 0x6000 && a <= 0x7fff) {
+      const v = this.cart?.cpuRead(a)
+      if (v !== null && v !== undefined) return v & 0xff
       return this.prgRam[a & 0x1fff] ?? 0
     }
 
-    if (a >= 0x8000) {
+    // Cartridge space ($4020-$FFFF). Note: $6000-$7FFF is handled above as a simple PRG-RAM window.
+    if (a >= 0x4020) {
       const v = this.cart?.cpuRead(a)
       if (v !== null && v !== undefined) return v & 0xff
     }
@@ -148,12 +154,20 @@ export class Bus implements CpuAddressSpace {
     }
 
     if (a >= 0x6000 && a <= 0x7fff) {
+      if (this.cart?.cpuWrite(a, v)) {
+        this.ppu.notifyMapperWrite()
+        return
+      }
       this.prgRam[a & 0x1fff] = v
       return
     }
 
-    if (a >= 0x8000) {
-      if (this.cart?.cpuWrite(a, v)) return
+    // Cartridge space ($4020-$FFFF). Note: $6000-$7FFF is handled above as a simple PRG-RAM window.
+    if (a >= 0x4020) {
+      if (this.cart?.cpuWrite(a, v)) {
+        this.ppu.notifyMapperWrite()
+        return
+      }
     }
   }
 

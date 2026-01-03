@@ -122,6 +122,11 @@ export class PpuStub {
   private lastSpriteDrawnCount = 0
   private lastSprite0Hit = false
 
+  private lastRenderedPpuctrl = 0
+  private lastRenderedPpumask = 0
+  private lastChrNonZeroLo4k = 0
+  private lastChrNonZeroHi4k = 0
+
   private frameWrite2000 = 0
   private frameWrite2005 = 0
   private frameWrite2006 = 0
@@ -150,6 +155,53 @@ export class PpuStub {
   private readonly mapperRenderStateByScanline: Array<unknown | undefined> = new Array(240)
 
   private readonly renderStateByScanline: Array<RenderLineState | undefined> = new Array(240)
+
+  private getTargetScanlineForCpuWrite(): number | null {
+    // Approximate when a CPU-side register write should affect rendering.
+    // - Writes during visible dots tend to affect the current scanline.
+    // - Writes during HBlank (roughly dots 256-340) tend to affect the next scanline.
+    // This isn't cycle-accurate but is much more reliable than sampling inside tick()
+    // given our CPU-instruction-granularity stepping.
+    if (this.scanline < 0 || this.scanline > 261) return null
+
+    const inVisibleLine = this.scanline >= 0 && this.scanline < 240
+    const inPreRender = this.scanline === 261
+    if (!inVisibleLine && !inPreRender) return null
+
+    const hblank = this.dot >= 256
+    let target = this.scanline
+    if (hblank) {
+      target = this.scanline === 261 ? 0 : this.scanline + 1
+    }
+
+    if (target < 0 || target >= 240) return null
+    return target
+  }
+
+  private snapshotLineStateInto(scanline: number): void {
+    this.renderStateByScanline[scanline] = {
+      ppuctrl: this.ppuctrl & 0xff,
+      ppumask: this.ppumask & 0xff,
+      // Include fine X so per-line scroll is consistent with end-of-frame scroll math.
+      scrollX: (((this.scrollXReg & 0xff) & 0xf8) | (this.x & 0x07)) & 0xff,
+      scrollY: this.scrollYReg & 0xff,
+      scrollNt: this.scrollBaseNametable & 0x03,
+      palette0: this.palette[0] ?? 0,
+    }
+  }
+
+  public notifyMapperWrite(): void {
+    const mapper = this.cart?.mapper
+    if (!mapper?.saveRenderState) return
+    const renderingEnabled = (this.ppumask & 0x18) !== 0
+    if (!renderingEnabled) return
+
+    const target = this.getTargetScanlineForCpuWrite()
+    if (target === null) return
+
+    const s = mapper.saveRenderState()
+    if (s !== undefined) this.mapperRenderStateByScanline[target] = s
+  }
 
   private lastStableStatusScrollX = 0
   private lastStableStatusScrollY = 0
@@ -206,6 +258,10 @@ export class PpuStub {
     readonly lastSpriteDrawnCount: number
     readonly lastSpritePixelsDrawn: number
     readonly lastSprite0Hit: boolean
+    readonly lastRenderedPpuctrl: number
+    readonly lastRenderedPpumask: number
+    readonly chrNonZeroLo4k: number
+    readonly chrNonZeroHi4k: number
     readonly scrollX: number
     readonly scrollY: number
     readonly scrollNt: number
@@ -235,9 +291,36 @@ export class PpuStub {
     readonly xFine: number
     readonly wLatch: number
     readonly oamPreview: string
+    readonly oamRawHead: string
+    readonly oamHiddenEfCount: number
   } {
     const preview: string[] = []
     let shown = 0
+
+    let hiddenEf = 0
+    for (let s = 0; s < 64; s++) {
+      const oy = this.oam[s * 4] ?? 0
+      if ((oy & 0xff) === 0xef) hiddenEf++
+    }
+
+    const rawHead: string[] = []
+    for (let s = 0; s < 8; s++) {
+      const o = s * 4
+      const oy = this.oam[o] ?? 0
+      const tile = this.oam[o + 1] ?? 0
+      const attr = this.oam[o + 2] ?? 0
+      const ox = this.oam[o + 3] ?? 0
+      rawHead.push(
+        `#${s.toString().padStart(2, '0')}: y=${(oy & 0xff).toString(16).toUpperCase().padStart(2, '0')} tile=${(tile & 0xff)
+          .toString(16)
+          .toUpperCase()
+          .padStart(2, '0')} attr=${(attr & 0xff).toString(16).toUpperCase().padStart(2, '0')} x=${(ox & 0xff)
+          .toString(16)
+          .toUpperCase()
+          .padStart(2, '0')}`,
+      )
+    }
+
     for (let s = 0; s < 64 && shown < 8; s++) {
       const o = s * 4
       const oy = this.oam[o] ?? 0
@@ -274,6 +357,10 @@ export class PpuStub {
       lastSpriteDrawnCount: this.lastSpriteDrawnCount,
       lastSpritePixelsDrawn: this.lastSpritePixelsDrawn,
       lastSprite0Hit: this.lastSprite0Hit,
+      lastRenderedPpuctrl: this.lastRenderedPpuctrl & 0xff,
+      lastRenderedPpumask: this.lastRenderedPpumask & 0xff,
+      chrNonZeroLo4k: this.lastChrNonZeroLo4k,
+      chrNonZeroHi4k: this.lastChrNonZeroHi4k,
       scrollX: this.scrollXReg & 0xff,
       scrollY: this.scrollYReg & 0xff,
       scrollNt: this.scrollBaseNametable & 0x03,
@@ -303,6 +390,8 @@ export class PpuStub {
       xFine: this.x & 0x07,
       wLatch: this.w & 1,
       oamPreview: preview.join('\n'),
+      oamRawHead: rawHead.join('\n'),
+      oamHiddenEfCount: hiddenEf,
     }
   }
 
@@ -314,11 +403,21 @@ export class PpuStub {
     // simplified bookkeeping (can mis-detect split scroll and cause visible wrap artifacts).
     this.w = 0
 
-    // Learn whether the game uses split-scroll (multiple $2005 pairs per frame).
-    // We use this to enable SMB-style HUD/playfield splitting without impacting
-    // games that only set scroll once per frame.
-    if (this.frame2005PairCount >= 2) {
-      this.sawMulti2005Pairs = true
+    // Learn whether the game uses SMB-style split-scroll.
+    // Some games may write multiple $2005 pairs during init/scene transitions; we only
+    // enable the HUD/playfield split heuristic if the observed pattern matches:
+    // - first pair is near (0,0) (typical fixed HUD)
+    // - later non-zero pair differs (playfield scroll)
+    if (!this.sawMulti2005Pairs && this.frame2005PairCount >= 2) {
+      const fx = this.frameFirst2005_1 & 0xff
+      const fy = this.frameFirst2005_2 & 0xff
+      const lx = this.frameLastNonZero2005_1 & 0xff
+      const ly = this.frameLastNonZero2005_2 & 0xff
+      const firstLooksLikeHud = fx <= 7 && fy <= 7
+      const differs = fx !== lx || fy !== ly
+      if (firstLooksLikeHud && differs) {
+        this.sawMulti2005Pairs = true
+      }
     }
 
     // Snapshot scroll from internal v/x at the real frame boundary (pre-render).
@@ -484,11 +583,19 @@ export class PpuStub {
         // t: ....BA.. ........ = value: ......BA
         this.t = (this.t & ~0x0c00) | ((v & 0x03) << 10)
         this.updateNmiLevel()
+
+        const target = this.getTargetScanlineForCpuWrite()
+        if (target !== null) this.snapshotLineStateInto(target)
         return
       }
       case 0x2001:
         // PPUMASK
         this.ppumask = v
+
+        {
+          const target = this.getTargetScanlineForCpuWrite()
+          if (target !== null) this.snapshotLineStateInto(target)
+        }
         return
       case 0x2003:
         // OAMADDR
@@ -510,6 +617,9 @@ export class PpuStub {
           // t: ....... ...HGFED = d: HGFED...
           this.t = (this.t & ~0x001f) | ((v >> 3) & 0x1f)
           this.w = 1
+
+          const target = this.getTargetScanlineForCpuWrite()
+          if (target !== null) this.snapshotLineStateInto(target)
         } else {
           this.scrollYReg = v
           this.lastWrite2005_2 = v
@@ -517,6 +627,9 @@ export class PpuStub {
           // t: CBA..HG FED..... = d: HGFEDCBA
           this.t = (this.t & ~0x73e0) | (((v & 0x07) << 12) | (((v >> 3) & 0x1f) << 5))
           this.w = 0
+
+          const target = this.getTargetScanlineForCpuWrite()
+          if (target !== null) this.snapshotLineStateInto(target)
 
           // A full X/Y scroll pair has been written.
           if (this.frame2005PairCount === 0) {
@@ -580,23 +693,21 @@ export class PpuStub {
       }
     }
     for (let i = 0; i < ppuCycles; i++) {
-      // Capture mapper state for this scanline so renderFrame can approximate mid-frame bank changes.
-      if (this.dot === 0) {
+      // Capture render state early in the scanline.
+      // Many MMC3 games update scroll/banks in the IRQ handler near the start of a scanline;
+      // capturing at dot 16 helps us pick up those changes for this scanline in the simplified renderer.
+      if (this.dot === 16) {
         if (this.scanline >= 0 && this.scanline < 240) {
-          this.renderStateByScanline[this.scanline] = {
-            ppuctrl: this.ppuctrl & 0xff,
-            ppumask: this.ppumask & 0xff,
-            scrollX: this.scrollXReg & 0xff,
-            scrollY: this.scrollYReg & 0xff,
-            scrollNt: this.scrollBaseNametable & 0x03,
-            palette0: this.palette[0] ?? 0,
+          if (this.renderStateByScanline[this.scanline] === undefined) {
+            this.snapshotLineStateInto(this.scanline)
           }
 
-          // Only capture mapper state when rendering is enabled (avoids spurious clocks in blanking).
           const renderingEnabled = (this.ppumask & 0x18) !== 0
           if (renderingEnabled) {
-            const s = this.cart?.mapper.saveRenderState?.()
-            if (s !== undefined) this.mapperRenderStateByScanline[this.scanline] = s
+            if (this.mapperRenderStateByScanline[this.scanline] === undefined) {
+              const s = this.cart?.mapper.saveRenderState?.()
+              if (s !== undefined) this.mapperRenderStateByScanline[this.scanline] = s
+            }
           }
         }
       }
@@ -605,7 +716,9 @@ export class PpuStub {
       // Real MMC3 clocks from PPU A12 rises; we approximate using a stable dot.
       if (this.dot === 260) {
         const renderingEnabled = (this.ppumask & 0x18) !== 0
-        if (renderingEnabled && this.scanline >= 0 && this.scanline < 240) {
+        // Include pre-render scanline (261): it performs background fetches and produces A12 edges.
+        const clocksMmc3Counter = (this.scanline >= 0 && this.scanline < 240) || this.scanline === 261
+        if (renderingEnabled && clocksMmc3Counter) {
           this.cart?.mapper.onPpuScanline?.()
         }
       }
@@ -725,9 +838,32 @@ export class PpuStub {
     this.lastSpritePixelsDrawn = 0
     this.lastSpriteDrawnCount = 0
 
+    // Capture PPUCTRL/PPUMASK at the moment we rendered this frame.
+    this.lastRenderedPpuctrl = this.ppuctrl & 0xff
+    this.lastRenderedPpumask = this.ppumask & 0xff
+
+    // Compute CHR non-zero stats once per rendered frame (useful for CHR-RAM titles).
+    // If one 4KB half is all zeros, sprites/BG can appear to vanish depending on pattern table selection.
+    if (this.cart) {
+      let lo = 0
+      let hi = 0
+      for (let a = 0; a < 0x1000; a++) {
+        if ((this.cart.ppuRead(a) & 0xff) !== 0) lo++
+      }
+      for (let a = 0x1000; a < 0x2000; a++) {
+        if ((this.cart.ppuRead(a) & 0xff) !== 0) hi++
+      }
+      this.lastChrNonZeroLo4k = lo
+      this.lastChrNonZeroHi4k = hi
+    } else {
+      this.lastChrNonZeroLo4k = 0
+      this.lastChrNonZeroHi4k = 0
+    }
+
     if (!bgEnabled) {
       frame.clearRgb(ub.r, ub.g, ub.b)
-      // Still allow sprites to render over backdrop.
+      // Still allow BG to render per-scanline if the game enables it during visible lines.
+      // (Many games disable BG during vblank while preparing the next frame.)
     }
 
     // Use explicit $2005/$2000 scroll state.
@@ -815,63 +951,73 @@ export class PpuStub {
 
     const mapper = this.cart?.mapper
     const canReplayMapper = !!mapper?.saveRenderState && !!mapper?.loadRenderState
-    const canReplayPpuState = canReplayMapper
+    // PPU register state (PPUCTRL/PPUMASK/palette) can be captured per scanline regardless of mapper.
+    // This matters for games that toggle PPUMASK during vblank (sprites off) but enable it during visible lines.
+    const canReplayPpuState = true
+    // Only replay per-scanline mapper state for mappers that need mid-frame effects.
     const mapperStateAtEndOfFrame = canReplayMapper ? mapper!.saveRenderState!() : undefined
 
-    if (bgEnabled) {
-      for (let y = 0; y < 240; y++) {
-        if (canReplayMapper) {
-          const s = this.mapperRenderStateByScanline[y]
-          if (s !== undefined) mapper!.loadRenderState!(s)
-        }
+    // Render background per scanline based on captured PPU state.
+    // Do not skip the entire BG pass based on a single PPUMASK snapshot.
+    for (let y = 0; y < 240; y++) {
+      if (canReplayMapper) {
+        const s = this.mapperRenderStateByScanline[y]
+        if (s !== undefined) mapper!.loadRenderState!(s)
+      }
 
-        const lineState = canReplayPpuState ? this.renderStateByScanline[y] : undefined
-        const ppuctrlLine = (lineState?.ppuctrl ?? this.ppuctrl) & 0xff
-        const ppumaskLine = (lineState?.ppumask ?? this.ppumask) & 0xff
-        const bgEnabledLine = canReplayPpuState ? (ppumaskLine & 0x08) !== 0 : bgEnabled
-        const showBgLeft8Line = canReplayPpuState ? (ppumaskLine & 0x02) !== 0 : showBgLeft8
-        const patternBaseLine = (ppuctrlLine & 0x10) !== 0 ? 0x1000 : 0x0000
+      const lineState = canReplayPpuState ? this.renderStateByScanline[y] : undefined
+      const ppuctrlLine = (lineState?.ppuctrl ?? this.ppuctrl) & 0xff
+      const ppumaskLine = (lineState?.ppumask ?? this.ppumask) & 0xff
+      const bgEnabledLine = (ppumaskLine & 0x08) !== 0
+      const showBgLeft8Line = (ppumaskLine & 0x02) !== 0
+      const patternBaseLine = (ppuctrlLine & 0x10) !== 0 ? 0x1000 : 0x0000
 
-        const ubLine = canReplayPpuState ? nesColorIndexToRgb((lineState?.palette0 ?? universalBg) & 0x3f) : ub
+      const ubLine = canReplayPpuState ? nesColorIndexToRgb((lineState?.palette0 ?? universalBg) & 0x3f) : ub
 
-        if (!bgEnabledLine) {
-          // Background disabled for this scanline (only relevant for mid-frame effects).
-          for (let x = 0; x < 256; x++) {
-            const i = (y * 256 + x) * 4
-            frame.rgba[i] = ubLine.r
-            frame.rgba[i + 1] = ubLine.g
-            frame.rgba[i + 2] = ubLine.b
-            frame.rgba[i + 3] = 0xff
-          }
-          continue
-        }
-
-        const useStart = y < splitY
-        // Only use per-scanline scroll state for mappers that rely on mid-frame effects (e.g. MMC3).
-        const baseNametableIndex = (
-          canReplayPpuState
-            ? (lineState?.scrollNt ?? (useStart ? 0 : endBaseNametableIndex))
-            : (useStart ? 0 : endBaseNametableIndex)
-        ) & 0x03
-        const scrollX = (
-          canReplayPpuState
-            ? (lineState?.scrollX ?? (useStart ? statusScrollX : playfieldScrollX))
-            : (useStart ? statusScrollX : playfieldScrollX)
-        ) & 0xff
-        const scrollY = (
-          canReplayPpuState
-            ? (lineState?.scrollY ?? (useStart ? statusScrollY : playfieldScrollY))
-            : (useStart ? statusScrollY : playfieldScrollY)
-        ) & 0xff
-
-        const worldY = y + scrollY
-        const yWrapped = ((worldY % 480) + 480) % 480
-        const ntY = yWrapped >= 240 ? 1 : 0
-        const yInNt = yWrapped % 240
-        const tileY = yInNt >> 3
-        const fineY = yInNt & 0x07
-
+      if (!bgEnabledLine) {
+        // Background disabled for this scanline.
         for (let x = 0; x < 256; x++) {
+          const i = (y * 256 + x) * 4
+          frame.rgba[i] = ubLine.r
+          frame.rgba[i + 1] = ubLine.g
+          frame.rgba[i + 2] = ubLine.b
+          frame.rgba[i + 3] = 0xff
+        }
+        continue
+      }
+
+      const useStart = y < splitY
+
+      // Scroll source:
+      // Prefer per-scanline captured scroll/nametable state whenever available.
+      // This is more robust than the old fixed split heuristic and supports both
+      // top-HUD and bottom-HUD games.
+      const usePerLineScroll = canReplayPpuState && lineState !== undefined
+
+      const baseNametableIndex = (
+        usePerLineScroll
+          ? (lineState?.scrollNt ?? endBaseNametableIndex)
+          : (useStart ? 0 : endBaseNametableIndex)
+      ) & 0x03
+      const scrollX = (
+        usePerLineScroll
+          ? (lineState?.scrollX ?? playfieldScrollX)
+          : (useStart ? statusScrollX : playfieldScrollX)
+      ) & 0xff
+      const scrollY = (
+        usePerLineScroll
+          ? (lineState?.scrollY ?? playfieldScrollY)
+          : (useStart ? statusScrollY : playfieldScrollY)
+      ) & 0xff
+
+      const worldY = y + scrollY
+      const yWrapped = ((worldY % 480) + 480) % 480
+      const ntY = yWrapped >= 240 ? 1 : 0
+      const yInNt = yWrapped % 240
+      const tileY = yInNt >> 3
+      const fineY = yInNt & 0x07
+
+      for (let x = 0; x < 256; x++) {
           // Left 8-pixel background masking (PPUMASK bit 1).
           if (x < 8 && !showBgLeft8Line) {
             const i = (y * 256 + x) * 4
@@ -926,7 +1072,6 @@ export class PpuStub {
           if (color !== 0) {
             this.bgOpaque[y * 256 + x] = 1
           }
-        }
       }
     }
 
@@ -935,21 +1080,32 @@ export class PpuStub {
       mapper!.loadRenderState!(mapperStateAtEndOfFrame)
     }
 
-    if (!spritesEnabled) {
-      return
-    }
+    // Do not early-return based on the *current* PPUMASK: many games toggle PPUMASK during vblank.
+    // We render using per-scanline snapshots where available.
 
-    const spriteSize16 = (this.ppuctrl & 0x20) !== 0
-    const spriteHeight = spriteSize16 ? 16 : 8
     const spritePatternBase8x8 = (this.ppuctrl & 0x08) !== 0 ? 0x1000 : 0x0000
 
-    for (let s = 0; s < 64; s++) {
-      const o = s * 4
-      const oy = this.oam[o] ?? 0
-      const ox = this.oam[o + 3] ?? 0
-      const y = (oy + 1) & 0xff
-      const x = ox & 0xff
-      if (y < 240 && x < 256) this.lastVisibleSpriteCount++
+    // Determine whether sprites were enabled on any visible scanline.
+    let spritesEnabledAny = spritesEnabled
+    if (!spritesEnabledAny && canReplayPpuState) {
+      for (let y = 0; y < 240; y++) {
+        const ls = this.renderStateByScanline[y]
+        if (ls !== undefined && ((ls.ppumask & 0x10) !== 0)) {
+          spritesEnabledAny = true
+          break
+        }
+      }
+    }
+
+    if (spritesEnabledAny) {
+      for (let s = 0; s < 64; s++) {
+        const o = s * 4
+        const oy = this.oam[o] ?? 0
+        const ox = this.oam[o + 3] ?? 0
+        const y = (oy + 1) & 0xff
+        const x = ox & 0xff
+        if (y < 240 && x < 256) this.lastVisibleSpriteCount++
+      }
     }
 
     // Draw in reverse OAM order so lower indices win on overlap.
@@ -975,9 +1131,11 @@ export class PpuStub {
 
       let drewAnyPixel = false
 
-      for (let row = 0; row < spriteHeight; row++) {
-        const sy = spriteY + row
-        if (sy < 0 || sy >= 240) continue
+      // Iterate by scanline to support per-scanline PPUCTRL changes (sprite size / pattern base).
+      const syStart = Math.max(0, spriteY)
+      const syEnd = Math.min(239, spriteY + 15)
+      for (let sy = syStart; sy <= syEnd; sy++) {
+        const row = (sy - spriteY) | 0
 
         if (canReplayMapper) {
           const s = this.mapperRenderStateByScanline[sy]
@@ -987,10 +1145,14 @@ export class PpuStub {
         const lineState = canReplayPpuState ? this.renderStateByScanline[sy] : undefined
         const ppuctrlLine = (lineState?.ppuctrl ?? this.ppuctrl) & 0xff
         const ppumaskLine = (lineState?.ppumask ?? this.ppumask) & 0xff
+        const spritesEnabledLine = (ppumaskLine & 0x10) !== 0
+        if (!spritesEnabledLine) continue
         const showSpritesLeft8Line = canReplayPpuState ? (ppumaskLine & 0x04) !== 0 : showSpritesLeft8
-        const spriteSize16Line = canReplayPpuState ? (ppuctrlLine & 0x20) !== 0 : spriteSize16
+        const spriteSize16Line = canReplayPpuState ? (ppuctrlLine & 0x20) !== 0 : (this.ppuctrl & 0x20) !== 0
         const spriteHeightLine = spriteSize16Line ? 16 : 8
         const spritePatternBase8x8Line = canReplayPpuState ? ((ppuctrlLine & 0x08) !== 0 ? 0x1000 : 0x0000) : spritePatternBase8x8
+
+        if (row < 0 || row >= spriteHeightLine) continue
 
         const tileRow = flipV ? spriteHeightLine - 1 - row : row
 
@@ -1066,6 +1228,11 @@ export class PpuStub {
           frame.rgba[i + 3] = 0xff
         }
       }
+    }
+
+    // Sprite rendering may replay per-scanline mapper state; restore end-of-frame state.
+    if (canReplayMapper && mapperStateAtEndOfFrame !== undefined) {
+      mapper!.loadRenderState!(mapperStateAtEndOfFrame)
     }
   }
 
@@ -1153,12 +1320,31 @@ export class PpuStub {
   }
 
   private readPpuMemory(addr: number): number {
-    const a = addr & 0x3fff
+    let a = addr & 0x3fff
+    // $3000-$3EFF is a mirror of $2000-$2EFF.
+    if (a >= 0x3000 && a <= 0x3eff) a = (a - 0x1000) & 0x3fff
     if (a <= 0x1fff) {
       return this.cart?.ppuRead(a) ?? 0
     }
 
     if (a >= 0x2000 && a <= 0x2fff) {
+      const map = this.cart?.mapper.mapPpuNametable?.(a) ?? null
+      if (map) {
+        if (map.kind === 'chr') {
+          const chr = this.cart?.chrMem
+          if (!chr) return 0
+          const i = map.index | 0
+          if (i < 0 || i >= chr.length) return 0
+          return chr[i] ?? 0
+        }
+
+        // CIRAM is 2KB (two 1KB pages). Use our internal nametable RAM for storage.
+        const page = map.page & 0x01
+        const offset = a & 0x03ff
+        const i = ((page * 0x0400) + offset) & 0x07ff
+        return this.vram[i] ?? 0
+      }
+
       const nt = this.mapNametableAddr(a)
       return this.vram[nt] ?? 0
     }
@@ -1172,7 +1358,9 @@ export class PpuStub {
   }
 
   private writePpuMemory(addr: number, value: number): void {
-    const a = addr & 0x3fff
+    let a = addr & 0x3fff
+    // $3000-$3EFF is a mirror of $2000-$2EFF.
+    if (a >= 0x3000 && a <= 0x3eff) a = (a - 0x1000) & 0x3fff
     const v = value & 0xff
 
     if (a <= 0x1fff) {
@@ -1181,6 +1369,28 @@ export class PpuStub {
     }
 
     if (a >= 0x2000 && a <= 0x2fff) {
+      const map = this.cart?.mapper.mapPpuNametable?.(a) ?? null
+      if (map) {
+        if (map.kind === 'chr') {
+          // Only writable when the cartridge provides CHR RAM.
+          if (this.cart?.hasChrRam) {
+            const chr = this.cart?.chrMem
+            if (chr) {
+              const i = map.index | 0
+              if (i >= 0 && i < chr.length) chr[i] = v
+            }
+          }
+          return
+        }
+
+        // CIRAM is 2KB (two 1KB pages). Use our internal nametable RAM for storage.
+        const page = map.page & 0x01
+        const offset = a & 0x03ff
+        const i = ((page * 0x0400) + offset) & 0x07ff
+        this.vram[i] = v
+        return
+      }
+
       const nt = this.mapNametableAddr(a)
       this.vram[nt] = v
       return

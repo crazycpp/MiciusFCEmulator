@@ -27,6 +27,11 @@ export class Emulator {
   private readonly cpu = new Cpu6502(this.bus, (cpuCycles) => this.onCpuCycles(cpuCycles))
   private readonly disasm = new Disassembler(this.bus)
 
+  public constructor() {
+    // Allow APU DMC to fetch sample bytes from CPU memory.
+    this.apu.setDmcReader((addr) => this.bus.peek(addr))
+  }
+
   private cart: Cartridge | null = null
   private lastRomLoadError: string | null = null
   private lastRomHeader: INesHeader | null = null
@@ -56,6 +61,10 @@ export class Emulator {
     readonly lastSpriteDrawnCount: number
     readonly lastSpritePixelsDrawn: number
     readonly lastSprite0Hit: boolean
+    readonly lastRenderedPpuctrl: number
+    readonly lastRenderedPpumask: number
+    readonly chrNonZeroLo4k: number
+    readonly chrNonZeroHi4k: number
     readonly scrollX: number
     readonly scrollY: number
     readonly scrollNt: number
@@ -85,6 +94,8 @@ export class Emulator {
     readonly xFine: number
     readonly wLatch: number
     readonly oamPreview: string
+    readonly oamRawHead: string
+    readonly oamHiddenEfCount: number
   } {
     return this.ppu.getDebugInfo()
   }
@@ -124,6 +135,37 @@ export class Emulator {
     }
   }
 
+  public getCpuDebugInfo(): {
+    readonly pc: number
+    readonly a: number
+    readonly x: number
+    readonly y: number
+    readonly p: number
+    readonly sp: number
+    readonly irqServiceCount: number
+    readonly nmiServiceCount: number
+    readonly irqLine: boolean
+  } {
+    const r = this.cpu.getRegisters()
+    const ints = this.cpu.getInterruptCounts()
+    const irqLine = this.cart?.mapper.getIrqLevel?.() ?? false
+    return {
+      pc: r.pc,
+      a: r.a,
+      x: r.x,
+      y: r.y,
+      p: r.p,
+      sp: r.sp,
+      irqServiceCount: ints.irq,
+      nmiServiceCount: ints.nmi,
+      irqLine,
+    }
+  }
+
+  public getMapperDebugState(): unknown {
+    return this.cart?.mapper.saveRenderState?.() ?? null
+  }
+
   public setCpuTraceEnabled(enabled: boolean): void {
     this.cpuTraceEnabled = enabled
   }
@@ -133,6 +175,8 @@ export class Emulator {
     // right point within polling instructions (timing test ROMs are sensitive).
     this.apu.tickCpuCycles(cpuCycles)
     this.ppu.tick(cpuCycles * 3)
+
+    this.cart?.mapper.onCpuCycles?.(cpuCycles)
 
     // Mapper IRQ line (e.g. MMC3 scanline IRQ).
     const irqLevel = this.cart?.mapper.getIrqLevel?.() ?? false

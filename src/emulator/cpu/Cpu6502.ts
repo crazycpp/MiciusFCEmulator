@@ -38,6 +38,9 @@ export class Cpu6502 {
   private nmiRequested = false
   private irqLine = false
 
+  private nmiServiceCount = 0
+  private irqServiceCount = 0
+
   private consumeCycles(cycles: number): void {
     const n = cycles | 0
     if (n <= 0) return
@@ -67,6 +70,8 @@ export class Cpu6502 {
     // nestest.log counts the reset sequence as 7 cycles.
     this.cycles = 7
     this.nmiRequested = false
+    this.nmiServiceCount = 0
+    this.irqServiceCount = 0
   }
 
   public requestNmi(): void {
@@ -79,6 +84,10 @@ export class Cpu6502 {
 
   public getCycleCount(): number {
     return this.cycles
+  }
+
+  public getInterruptCounts(): { readonly nmi: number; readonly irq: number } {
+    return { nmi: this.nmiServiceCount | 0, irq: this.irqServiceCount | 0 }
   }
 
   public step(beforeExecute?: CpuBeforeExecuteHook): void {
@@ -121,6 +130,7 @@ export class Cpu6502 {
   }
 
   private serviceNmi(): void {
+    this.nmiServiceCount = (this.nmiServiceCount + 1) | 0
     // Approximate NMI timing as 7 CPU cycles.
     // We consume cycles as we touch the bus so PPU/APU timing stays aligned.
     this.consumeCycles(1) // dummy read
@@ -138,6 +148,7 @@ export class Cpu6502 {
   }
 
   private serviceIrq(): void {
+    this.irqServiceCount = (this.irqServiceCount + 1) | 0
     // Approximate IRQ timing as 7 CPU cycles.
     this.consumeCycles(1) // dummy read
 

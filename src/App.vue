@@ -66,20 +66,29 @@ async function handleRomSelected(event: Event): Promise<void> {
   input.value = ''
 }
 
-function handleRunPause(): void {
+async function handleRunPause(): Promise<void> {
   if (emulator.runState === 'running') {
     emulator.pause()
-  } else {
-    void ensureAudioStarted()
-    emulator.start()
+    runState.value = emulator.runState
+    return
   }
 
+  try {
+    await ensureAudioStarted()
+  } catch {
+    // If the browser blocks audio start, still allow running.
+  }
+  emulator.start()
   runState.value = emulator.runState
 }
 
-function handleReset(): void {
+async function handleReset(): Promise<void> {
   emulator.reset()
-  void ensureAudioStarted()
+  try {
+    await ensureAudioStarted()
+  } catch {
+    // ignore
+  }
   presentOnce()
   runState.value = emulator.runState
 }
@@ -90,15 +99,23 @@ function handleTraceToggle(): void {
   traceLines.value = traceEnabled.value ? emulator.trace.snapshot().slice(-TRACE_VIEW_LINES) : []
 }
 
-function handleStepFrame(): void {
-  void ensureAudioStarted()
+async function handleStepFrame(): Promise<void> {
+  try {
+    await ensureAudioStarted()
+  } catch {
+    // ignore
+  }
   emulator.stepFrame()
   presentOnce()
   runState.value = emulator.runState
 }
 
-function handleStepInstruction(): void {
-  void ensureAudioStarted()
+async function handleStepInstruction(): Promise<void> {
+  try {
+    await ensureAudioStarted()
+  } catch {
+    // ignore
+  }
   emulator.stepInstruction()
   presentOnce()
   runState.value = emulator.runState
@@ -225,6 +242,8 @@ function uiTick(): void {
 
   const ppu = emulator.getPpuDebugInfo()
   const cart = emulator.getCartDebugInfo()
+  const cpu = emulator.getCpuDebugInfo()
+  const mapperState = cart.loaded ? emulator.getMapperDebugState() : null
   const test = emulator.getTestRomStatus()
   const joy = emulator.getJoypad1DebugInfo()
   const joy2 = emulator.getJoypad2DebugInfo()
@@ -237,8 +256,36 @@ function uiTick(): void {
         ? `CART (load failed) mapper=${cart.lastHeader.mapperNumber} mirroring=${cart.lastHeader.mirroring} PRG=${cart.lastHeader.prgRomSizeBytes} CHR=${cart.lastHeader.chrRomSizeBytes} trainer=${cart.lastHeader.hasTrainer ? '1' : '0'} nes2=${cart.lastHeader.isNes2_0 ? '1' : '0'} | error=${cart.lastLoadError ?? '(unknown)'}`
         : `CART (none)${cart.lastLoadError ? ' | error=' + cart.lastLoadError : ''}`,
     `PPUCTRL=${ppu.ppuctrl.toString(16).toUpperCase().padStart(2, '0')}  PPUMASK=${ppu.ppumask.toString(16).toUpperCase().padStart(2, '0')}  PPUSTATUS=${ppu.ppustatus.toString(16).toUpperCase().padStart(2, '0')}`,
+    `CPU PC=${cpu.pc.toString(16).toUpperCase().padStart(4, '0')} A=${cpu.a.toString(16).toUpperCase().padStart(2, '0')} X=${cpu.x.toString(16).toUpperCase().padStart(2, '0')} Y=${cpu.y.toString(16).toUpperCase().padStart(2, '0')} P=${cpu.p.toString(16).toUpperCase().padStart(2, '0')} SP=${cpu.sp.toString(16).toUpperCase().padStart(2, '0')} | IRQsvc=${cpu.irqServiceCount} NMIsvc=${cpu.nmiServiceCount} IRQline=${cpu.irqLine ? '1' : '0'}`,
+    cart.loaded && cart.mapperNumber === 1 && mapperState
+      ? (() => {
+          const s = mapperState as any
+          const ctl = (s.control ?? 0) & 0x1f
+          const chrMode = (ctl >> 4) & 1
+          const prgMode = (ctl >> 2) & 3
+          const mm = ctl & 3
+          const mmName = mm === 0 ? '1sc0' : mm === 1 ? '1sc1' : mm === 2 ? 'V' : 'H'
+          const chr0 = ((s.chrBank0 ?? 0) & 0x1f).toString(16).toUpperCase().padStart(2, '0')
+          const chr1 = ((s.chrBank1 ?? 0) & 0x1f).toString(16).toUpperCase().padStart(2, '0')
+          const prg = ((s.prgBank ?? 0) & 0x1f).toString(16).toUpperCase().padStart(2, '0')
+          return `M1 ctl=${ctl.toString(16).toUpperCase().padStart(2, '0')} mm=${mmName} chrMode=${chrMode} prgMode=${prgMode} | chr0=${chr0} chr1=${chr1} prg=${prg}`
+        })()
+      : '',
+    cart.loaded && cart.mapperNumber === 67 && mapperState
+      ? (() => {
+          const s = mapperState as any
+          const cnt = (s.irqCounter ?? 0) & 0xffff
+          const chr = (s.chrBank2k instanceof Uint8Array)
+            ? Array.from(s.chrBank2k as Uint8Array).map((b) => (b & 0xff).toString(16).toUpperCase().padStart(2, '0')).join(' ')
+            : '(?)'
+          return `M67 prg=${((s.prgBank16k ?? 0) & 0xff).toString(16).toUpperCase().padStart(2, '0')} chr2k=[${chr}] mm=${cart.mirroring} | irqEn=${s.irqEnabled ? '1' : '0'} pend=${s.irqPending ? '1' : '0'} cnt=${cnt.toString(16).toUpperCase().padStart(4, '0')} fire=${s.irqFireCount ?? 0} ack=${s.irqAckCount ?? 0} | W:D8=${((s.lastWriteD800 ?? 0) & 0xff).toString(16).toUpperCase().padStart(2, '0')} C8=${((s.lastWriteC800 ?? 0) & 0xff).toString(16).toUpperCase().padStart(2, '0')} 80=${((s.lastWrite8000 ?? 0) & 0xff).toString(16).toUpperCase().padStart(2, '0')} E8=${((s.lastWriteE800 ?? 0) & 0xff).toString(16).toUpperCase().padStart(2, '0')} F8=${((s.lastWriteF800 ?? 0) & 0xff).toString(16).toUpperCase().padStart(2, '0')}`
+        })()
+      : '',
+    `RENDER PPUCTRL=${ppu.lastRenderedPpuctrl.toString(16).toUpperCase().padStart(2, '0')}  PPUMASK=${ppu.lastRenderedPpumask.toString(16).toUpperCase().padStart(2, '0')}  CHR nz: lo4k=${ppu.chrNonZeroLo4k} hi4k=${ppu.chrNonZeroHi4k}`,
     `BG=${bgOn ? 'on' : 'off'}  SPR=${spritesOn ? 'on' : 'off'}  OAMADDR=${ppu.oamaddr.toString(16).toUpperCase().padStart(2, '0')}`,
     `OAMDMA count=${ppu.oamDmaCount}  lastPage=${ppu.lastOamDmaPage.toString(16).toUpperCase().padStart(2, '0')}  lastNonZero=${ppu.lastOamDmaNonZero}`,
+    `OAM hidden(Y=EF) count=${ppu.oamHiddenEfCount}`,
+    ppu.oamRawHead ? `OAM head (first 8 sprites):\n${ppu.oamRawHead}` : 'OAM head (first 8 sprites): (none)',
     `SPR visible=${ppu.lastVisibleSpriteCount}  drawnSprites=${ppu.lastSpriteDrawnCount}  drawnPixels=${ppu.lastSpritePixelsDrawn}  spr0Hit=${ppu.lastSprite0Hit ? '1' : '0'}`,
     `SCROLL start x=${ppu.frameStartScrollX} y=${ppu.frameStartScrollY} nt=${ppu.frameStartScrollNt} | end x=${ppu.scrollX} y=${ppu.scrollY} nt=${ppu.scrollNt}`,
     `PPU writes: $2000=${ppu.frameWrite2000} $2005=${ppu.frameWrite2005} $2006=${ppu.frameWrite2006} $2007=${ppu.frameWrite2007} | last $2000=${ppu.lastWrite2000.toString(16).toUpperCase().padStart(2, '0')} $2005=[${ppu.lastWrite2005_1

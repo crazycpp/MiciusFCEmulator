@@ -11,6 +11,12 @@ const NOISE_PERIOD_TABLE: number[] = [
 
 const DUTY_RATIOS: number[] = [0.125, 0.25, 0.5, 0.75]
 
+// NTSC DMC rates in CPU cycles (nesdev)
+const DMC_RATE_TABLE: number[] = [
+  428, 380, 340, 320, 286, 254, 226, 214,
+  190, 160, 142, 128, 106, 85, 72, 54,
+]
+
 type EnvelopeState = {
   loop: boolean
   constantVolume: boolean
@@ -84,13 +90,39 @@ type NoiseChannel = {
   env: EnvelopeState
 }
 
+type DmcChannel = {
+  enabled: boolean
+  irqEnabled: boolean
+  loop: boolean
+  rateIndex: number
+  outputLevel: number // 0..127
+
+  sampleAddrReg: number
+  sampleLenReg: number
+
+  currentAddr: number
+  bytesRemaining: number
+
+  sampleBuffer: number
+  sampleBufferFull: boolean
+
+  shiftReg: number
+  bitsRemaining: number
+
+  irqFlag: boolean
+  accCycles: number
+}
+
 export class ApuStub {
   private sampleRate: number | null = null
+
+  private dmcReader: ((addr: number) => number) | null = null
 
   private pulse1: PulseChannel
   private pulse2: PulseChannel
   private tri: TriangleChannel
   private noise: NoiseChannel
+  private dmc: DmcChannel
 
   private quarterAcc = 0
   private halfAcc = 0
@@ -102,7 +134,9 @@ export class ApuStub {
   private dcYPrev = 0
 
   // Stereo interleaved ring buffer (L,R,L,R...)
-  private readonly outCapacityFrames = 16384
+  // Increase buffering to tolerate AudioWorklet startup latency without dropping short SFX.
+  // 65536 frames @ 48kHz ≈ 1.36s.
+  private readonly outCapacityFrames = 65536
   private readonly out = new Float32Array(this.outCapacityFrames * 2)
   private outRead = 0
   private outWrite = 0
@@ -159,6 +193,34 @@ export class ApuStub {
       lfsr: 1,
       env: mkEnv(),
     }
+
+    this.dmc = {
+      enabled: false,
+      irqEnabled: false,
+      loop: false,
+      rateIndex: 0,
+      outputLevel: 0,
+
+      sampleAddrReg: 0,
+      sampleLenReg: 0,
+
+      currentAddr: 0,
+      bytesRemaining: 0,
+
+      sampleBuffer: 0,
+      sampleBufferFull: false,
+
+      shiftReg: 0,
+      bitsRemaining: 0,
+
+      irqFlag: false,
+      accCycles: 0,
+    }
+  }
+
+  /** Provide a side-effect-free CPU memory reader for DMC sample fetches. */
+  public setDmcReader(reader: ((addr: number) => number) | null): void {
+    this.dmcReader = reader
   }
 
   public setSampleRate(sampleRate: number | null): void {
@@ -203,7 +265,8 @@ export class ApuStub {
       if (this.pulse2.lengthCounter > 0) v |= 0x02
       if (this.tri.lengthCounter > 0) v |= 0x04
       if (this.noise.lengthCounter > 0) v |= 0x08
-      // DMC + IRQ bits not implemented in MVP.
+      if (this.dmc.bytesRemaining > 0) v |= 0x10
+      if (this.dmc.irqFlag) v |= 0x80
       return v & 0xff
     }
 
@@ -327,11 +390,23 @@ export class ApuStub {
         return
       }
 
-      // DMC registers (ignored in MVP)
-      case 0x4010:
+      // DMC
+      case 0x4010: {
+        this.dmc.irqEnabled = (v & 0x80) !== 0
+        this.dmc.loop = (v & 0x40) !== 0
+        this.dmc.rateIndex = v & 0x0f
+        if (!this.dmc.irqEnabled) this.dmc.irqFlag = false
+        return
+      }
       case 0x4011:
+        // Direct load of DAC level.
+        this.dmc.outputLevel = v & 0x7f
+        return
       case 0x4012:
+        this.dmc.sampleAddrReg = v & 0xff
+        return
       case 0x4013:
+        this.dmc.sampleLenReg = v & 0xff
         return
 
       case 0x4015: {
@@ -339,6 +414,7 @@ export class ApuStub {
         const p2 = (v & 0x02) !== 0
         const tr = (v & 0x04) !== 0
         const no = (v & 0x08) !== 0
+        const dm = (v & 0x10) !== 0
 
         this.pulse1.enabled = p1
         this.pulse2.enabled = p2
@@ -348,6 +424,20 @@ export class ApuStub {
         if (!p2) this.pulse2.lengthCounter = 0
         if (!tr) this.tri.lengthCounter = 0
         if (!no) this.noise.lengthCounter = 0
+
+        if (!dm) {
+          this.dmc.enabled = false
+          this.dmc.bytesRemaining = 0
+          this.dmc.sampleBufferFull = false
+          this.dmc.bitsRemaining = 0
+          this.dmc.irqFlag = false
+        } else {
+          this.dmc.enabled = true
+          // If starting and no sample currently active, begin using the configured address/length.
+          if (this.dmc.bytesRemaining === 0) {
+            this.restartDmcSample()
+          }
+        }
         return
       }
       case 0x4017: {
@@ -365,6 +455,8 @@ export class ApuStub {
   public tickCpuCycles(deltaCycles: number): void {
     const cycles = deltaCycles | 0
     if (cycles <= 0) return
+
+    this.clockDmcCpuCycles(cycles)
 
     // Quarter frame @ 240Hz, half frame @ 120Hz.
     this.quarterAcc += cycles * 240
@@ -499,7 +591,8 @@ export class ApuStub {
     if (!this.sampleRate) return 0
 
     const period = NOISE_PERIOD_TABLE[this.noise.periodIndex & 0x0f] ?? 4
-    const freq = (CPU_HZ_NTSC / 2) / period
+    // Noise timer is clocked by the CPU/APU clock; table values are in CPU cycles.
+    const freq = CPU_HZ_NTSC / period
     this.noise.phase += freq / this.sampleRate
     while (this.noise.phase >= 1) {
       this.noise.phase -= 1
@@ -515,16 +608,79 @@ export class ApuStub {
     return outBit * vol
   }
 
+  private restartDmcSample(): void {
+    // Start address: $C000 + (addrReg * 64)
+    this.dmc.currentAddr = 0xc000 + ((this.dmc.sampleAddrReg & 0xff) << 6)
+    // Length: (lenReg * 16) + 1
+    this.dmc.bytesRemaining = ((this.dmc.sampleLenReg & 0xff) << 4) + 1
+  }
+
+  private dmcStep(): void {
+    if (!this.dmc.enabled) return
+
+    // Refill sample buffer if empty.
+    if (!this.dmc.sampleBufferFull) {
+      if (this.dmc.bytesRemaining > 0) {
+        const read = this.dmcReader
+        const b = read ? (read(this.dmc.currentAddr & 0xffff) & 0xff) : 0
+        this.dmc.sampleBuffer = b
+        this.dmc.sampleBufferFull = true
+        this.dmc.currentAddr = (this.dmc.currentAddr + 1) & 0xffff
+        if (this.dmc.currentAddr === 0x0000) this.dmc.currentAddr = 0x8000
+        this.dmc.bytesRemaining--
+      } else {
+        if (this.dmc.loop) {
+          this.restartDmcSample()
+        } else {
+          if (this.dmc.irqEnabled) this.dmc.irqFlag = true
+        }
+      }
+    }
+
+    // Load shift register when no bits remaining.
+    if (this.dmc.bitsRemaining === 0) {
+      if (this.dmc.sampleBufferFull) {
+        this.dmc.shiftReg = this.dmc.sampleBuffer & 0xff
+        this.dmc.sampleBufferFull = false
+        this.dmc.bitsRemaining = 8
+      } else {
+        // No data available; output holds.
+        return
+      }
+    }
+
+    const bit = this.dmc.shiftReg & 1
+    if (bit === 1) {
+      if (this.dmc.outputLevel <= 125) this.dmc.outputLevel += 2
+    } else {
+      if (this.dmc.outputLevel >= 2) this.dmc.outputLevel -= 2
+    }
+
+    this.dmc.shiftReg = (this.dmc.shiftReg >> 1) & 0xff
+    this.dmc.bitsRemaining = (this.dmc.bitsRemaining - 1) & 0xff
+  }
+
+  private clockDmcCpuCycles(cycles: number): void {
+    if (!this.dmc.enabled) return
+    const period = DMC_RATE_TABLE[this.dmc.rateIndex & 0x0f] ?? 428
+    this.dmc.accCycles += cycles
+    while (this.dmc.accCycles >= period) {
+      this.dmc.accCycles -= period
+      this.dmcStep()
+    }
+  }
+
   private renderSample(): number {
     const p1 = this.pulseOutput(this.pulse1, true)
     const p2 = this.pulseOutput(this.pulse2, false)
     const t = this.triangleOutput()
     const n = this.noiseOutput()
+    const d = this.dmc.enabled ? (this.dmc.outputLevel & 0x7f) : 0
 
     const pulseSum = p1 + p2
     const pulseOut = pulseSum > 0 ? 95.88 / (8128.0 / pulseSum + 100.0) : 0
 
-    const tndDen = t / 8227.0 + n / 12241.0
+    const tndDen = t / 8227.0 + n / 12241.0 + d / 22638.0
     const tndOut = tndDen > 0 ? 159.79 / (1.0 / tndDen + 100.0) : 0
 
     // 0..~1, unipolar; convert to roughly [-1..1] with headroom.
@@ -578,6 +734,22 @@ export class ApuStub {
     this.noise.env.start = false
     this.noise.env.divider = 0
     this.noise.env.decayLevel = 0
+
+    this.dmc.enabled = false
+    this.dmc.irqEnabled = false
+    this.dmc.loop = false
+    this.dmc.rateIndex = 0
+    this.dmc.outputLevel = 0
+    this.dmc.sampleAddrReg = 0
+    this.dmc.sampleLenReg = 0
+    this.dmc.currentAddr = 0
+    this.dmc.bytesRemaining = 0
+    this.dmc.sampleBuffer = 0
+    this.dmc.sampleBufferFull = false
+    this.dmc.shiftReg = 0
+    this.dmc.bitsRemaining = 0
+    this.dmc.irqFlag = false
+    this.dmc.accCycles = 0
 
     this.outRead = 0
     this.outWrite = 0

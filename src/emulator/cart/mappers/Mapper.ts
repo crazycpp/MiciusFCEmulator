@@ -3,6 +3,12 @@ import type { NesMirroring } from '../ines'
 export interface Mapper {
   readonly mapperNumber: number
 
+  /** Optional: handle CPU reads that do not come from PRG ROM (e.g. mapper registers in $4020-$7FFF). */
+  cpuReadRegister?(addr: number): number | null
+
+  /** Optional: handle CPU writes that do not go through PRG ROM mapping (e.g. mapper registers in $4020-$7FFF). */
+  cpuWriteRegister?(addr: number, value: number): boolean
+
   /** Map a CPU address ($8000-$FFFF) to an index into PRG ROM, or return null if unmapped. */
   mapCpuRead(addr: number): number | null
 
@@ -15,8 +21,20 @@ export interface Mapper {
   /** Handle a PPU write ($0000-$1FFF). Return mapped CHR index, or null if unmapped. */
   mapPpuWrite(addr: number, value: number): number | null
 
+  /** Optional: provide a direct PPU read for CHR (used for mixed CHR-ROM/CHR-RAM mappers). */
+  ppuReadOverride?(addr: number): number | null
+
+  /** Optional: handle a PPU write for CHR even if the cartridge is CHR-ROM. */
+  ppuWriteOverride?(addr: number, value: number): boolean
+
+  /** Optional: map a nametable address ($2000-$2FFF) to CHR or CIRAM. */
+  mapPpuNametable?(addr: number): { readonly kind: 'chr'; readonly index: number } | { readonly kind: 'ciram'; readonly page: number } | null
+
   /** Optional: called once per rendered scanline (used by MMC3 IRQ counter). */
   onPpuScanline?(): void
+
+  /** Optional: called when the CPU advances by N cycles (used by CPU-cycle IRQ counters like N163). */
+  onCpuCycles?(cpuCycles: number): void
 
   /** Optional: level of the mapper IRQ output line. */
   getIrqLevel?(): boolean
