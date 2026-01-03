@@ -91,6 +91,15 @@ async function ensureAudioStarted(): Promise<void> {
   emulator.setAudioSampleRate(audio.sampleRate)
 }
 
+async function tryStartAudioFromGesture(): Promise<void> {
+  try {
+    await ensureAudioStarted()
+  } catch (e) {
+    // Surface the reason in console; without this, Pages issues look like “silent but no error”.
+    console.warn('[audio] start failed:', e)
+  }
+}
+
 async function handleLoadRomClick(): Promise<void> {
   romInputRef.value?.click()
 }
@@ -106,8 +115,8 @@ async function handleRomSelected(event: Event): Promise<void> {
   // If the browser blocks it, audio will start on Run/Step instead.
   try {
     await ensureAudioStarted()
-  } catch {
-    // ignore
+  } catch (e) {
+    console.warn('[audio] start failed:', e)
   }
   presentOnce()
 
@@ -124,8 +133,9 @@ async function handleRunPause(): Promise<void> {
 
   try {
     await ensureAudioStarted()
-  } catch {
+  } catch (e) {
     // If the browser blocks audio start, still allow running.
+    console.warn('[audio] start failed:', e)
   }
   emulator.start()
   runState.value = emulator.runState
@@ -135,8 +145,8 @@ async function handleReset(): Promise<void> {
   emulator.reset()
   try {
     await ensureAudioStarted()
-  } catch {
-    // ignore
+  } catch (e) {
+    console.warn('[audio] start failed:', e)
   }
   presentOnce()
   runState.value = emulator.runState
@@ -151,8 +161,8 @@ function handleTraceToggle(): void {
 async function handleStepFrame(): Promise<void> {
   try {
     await ensureAudioStarted()
-  } catch {
-    // ignore
+  } catch (e) {
+    console.warn('[audio] start failed:', e)
   }
   emulator.stepFrame()
   presentOnce()
@@ -162,8 +172,8 @@ async function handleStepFrame(): Promise<void> {
 async function handleStepInstruction(): Promise<void> {
   try {
     await ensureAudioStarted()
-  } catch {
-    // ignore
+  } catch (e) {
+    console.warn('[audio] start failed:', e)
   }
   emulator.stepInstruction()
   presentOnce()
@@ -196,6 +206,7 @@ function uiTick(): void {
   const spritesOn = (ppu.ppumask & 0x10) !== 0
   const bgOn = (ppu.ppumask & 0x08) !== 0
   ppuDebugText.value = [
+    `AUDIO started=${audio.started ? '1' : '0'} state=${audio.state} rate=${audio.sampleRate ?? 0} pushedFrames=${audio.totalPushedFrames} err=${audio.lastError ?? ''}`,
     cart.loaded
       ? `CART mapper=${cart.mapperNumber} mirroring=${cart.mirroring} PRG=${cart.prgRomSizeBytes} CHR=${cart.chrRomSizeBytes} chrIsRam=${cart.chrIsRam ? '1' : '0'}`
       : cart.lastHeader
@@ -285,6 +296,14 @@ onMounted(() => {
 
   // Start a UI refresh loop so class-based emulator state is visible in Vue.
   uiRafId = requestAnimationFrame(uiTick)
+
+  // Fallback: a single user gesture anywhere can unlock audio on restrictive origins.
+  // This helps GitHub Pages where the first start attempt might not be considered user-activated.
+  const onFirstPointerDown = (): void => {
+    void tryStartAudioFromGesture()
+    window.removeEventListener('pointerdown', onFirstPointerDown, { capture: true } as any)
+  }
+  window.addEventListener('pointerdown', onFirstPointerDown, { capture: true, once: true })
 
   loadKeymapOverrides()
 
